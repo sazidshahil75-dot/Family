@@ -128,3 +128,6 @@ input{width:100%;min-height:42px;padding:.5rem .8rem;border-radius:12px;border:1
  .toolbar{top:8px;right:8px}
  .leaflet-control-zoom{display:none}
 }
+
+/* dark map from plain OpenStreetMap tiles (no API key needed) */
+.tiles-dark{filter:invert(1) hue-rotate(195deg) saturate(.55) brightness(.92) contrast(.92)}
