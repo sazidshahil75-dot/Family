@@ -80,13 +80,15 @@ function describe(p){
 const map=L.map('map',{zoomControl:false,worldCopyJump:true}).setView([23.8,90.4],6);
 L.control.zoom({position:'bottomright'}).addTo(map);
 if(matchMedia('(max-width:820px)').matches)map.attributionControl.setPosition('topleft');
-const carto=(s)=>L.tileLayer('https://{s}.basemaps.cartocdn.com/'+s+'/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20,attribution:'© OpenStreetMap contributors © CARTO'});
+const OSM='https://tile.openstreetmap.org/{z}/{x}/{y}.png',OSM_ATTR='© OpenStreetMap contributors';
+const ESRI='https://server.arcgisonline.com/ArcGIS/rest/services/';
+// No API keys anywhere: OpenStreetMap (dark look is a CSS filter) and Esri imagery.
 const LAYERS={
- dark:carto('dark_all'),
- streets:carto('rastertiles/voyager'),
+ dark:L.tileLayer(OSM,{maxZoom:19,attribution:OSM_ATTR,className:'tiles-dark'}),
+ streets:L.tileLayer(OSM,{maxZoom:19,attribution:OSM_ATTR}),
  sat:L.layerGroup([
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri'}),
-  carto('dark_only_labels')])};
+  L.tileLayer(ESRI+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri'}),
+  L.tileLayer(ESRI+'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19})])};
 let activeLayer=null;
 function setLayer(k){
  if(!LAYERS[k])k='dark';

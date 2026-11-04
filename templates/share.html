@@ -10,10 +10,17 @@
 <div class="small muted" id="remaining"></div>
 <p class="error" id="err" hidden></p>
 <button id="allowBtn" class="primary" hidden>Allow location</button>
-<div id="help" class="card small" hidden><b>iPhone: turn location on for Safari</b><ol style="margin:.4rem 0 0;padding-left:1.2rem">
+<div id="inapp" class="card small" hidden><b>Open this page in your browser</b>
+<p style="margin:.4rem 0">You opened it inside another app (WhatsApp, Facebook, Instagram, Messenger…). Those apps block location. Copy the link, then paste it into <b>Chrome</b> (Android) or <b>Safari</b> (iPhone).</p>
+<button id="copyLinkBtn" class="primary">Copy link</button></div>
+<div id="help" class="card small" hidden><b>Location is blocked. Turn it on like this</b>
+<p style="margin:.5rem 0 .2rem"><b>Android (Chrome)</b></p><ol style="margin:0;padding-left:1.2rem">
+<li>Pull down the top of your screen and make sure <b>Location</b> is on.</li>
+<li>Tap the <b>lock icon</b> (or the ⋮ menu, then <b>Settings</b>) next to the address, then <b>Permissions</b> (or <b>Site settings</b>), then <b>Location</b>, then <b>Allow</b>.</li></ol>
+<p style="margin:.5rem 0 .2rem"><b>iPhone (Safari)</b></p><ol style="margin:0;padding-left:1.2rem">
 <li>Tap <b>aA</b> in the address bar, then <b>Website Settings</b>, then <b>Location</b>, then <b>Allow</b>.</li>
-<li>If that is missing: Settings, <b>Privacy &amp; Security</b>, <b>Location Services</b>, <b>Safari Websites</b>, choose <b>While Using the App</b>.</li>
-<li>Come back here, reload the page and tap <b>Allow location</b>. On Android Chrome: tap the lock icon, then Permissions, then Location.</li></ol></div>
+<li>If that is missing: Settings, <b>Privacy &amp; Security</b>, <b>Location Services</b>, <b>Safari Websites</b>, choose <b>While Using the App</b>.</li></ol>
+<button id="reloadBtn" style="margin-top:.7rem">I turned it on. Reload</button></div>
 <div id="resumeBox" hidden>
 <label>Share for<select id="hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="8">8 hours</option><option value="">Until I stop it</option></select></label></div>
 <div class="row">
@@ -28,7 +35,10 @@
 </main>
 <script>
 const TOKEN={{ token|tojson }};let state={{ state|tojson }};
-let watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0,prevFix=null;const $=id=>document.getElementById(id);
+let perm=null,watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0,prevFix=null;const $=id=>document.getElementById(id);
+const inApp=/FBAN|FBAV|FB_IAB|Instagram|Messenger|Snapchat|TikTok|Line\/|MicroMessenger|Twitter|GSA\/|; wv\)/i.test(navigator.userAgent);
+async function checkPerm(){try{const q=await navigator.permissions.query({name:'geolocation'});perm=q.state;
+ q.onchange=()=>{perm=q.state;if(perm==='granted'){showErr('');stopWatch();locOk=false}render()}}catch(e){perm=null}}
 async function post(path,body){const r=await fetch('/api/s/'+TOKEN+'/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body||{})});return r.json()}
 function showErr(m){$('err').hidden=!m;$('err').textContent=m||''}
 function fmtRemain(ms){const m=Math.max(0,Math.round(ms/60000));return m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min'}
@@ -38,10 +48,11 @@ function render(){
  $('statusLine').textContent=live?'Sharing live':wait?'On, but no location yet':s==='paused'?'Paused':'Stopped';
  $('explain').textContent=live?'{{ owner }} can see your location on a map right now.':wait?'Allow location below. Until your phone shares it, {{ owner }} sees nothing.':'{{ owner }} cannot see where you are.';
  $('allowBtn').hidden=!wait;if(!wait)$('help').hidden=true;
+ $('inapp').hidden=!(inApp&&wait);if(wait&&perm==='denied')showHelp(true);
  $('pauseBtn').hidden=s!=='active';$('stopBtn').hidden=s==='stopped';
  $('resumeBtn').hidden=s==='active';$('resumeBtn').textContent=s==='paused'?'Resume sharing':'Start sharing again';
  $('resumeBox').hidden=s==='active';
- if(s==='active'){startWatch();requestWake()}else{stopWatch();releaseWake();prevFix=null;$('speedBox').hidden=true}
+ if(s==='active'){if(perm==='granted'||perm===null)startWatch();requestWake()}else{stopWatch();releaseWake();prevFix=null;$('speedBox').hidden=true}
  tickRemain()}
 function tickRemain(){if(locOk&&Date.now()-lastOkAt>90000){locOk=false;render();return}
  const e=state.expires_at;$('remaining').textContent=(state.status==='active'&&e)?'Sharing ends automatically in '+fmtRemain(new Date(e)-Date.now()):'';
@@ -73,15 +84,17 @@ async function onPos(pos){
   if(r.ok){locOk=true;lastOkAt=Date.now();showHelp(false)}else{locOk=false}render();
   $('lastSent').textContent='Last sent '+new Date().toLocaleTimeString()+' (accurate to about '+Math.round(pos.coords.accuracy)+' m)'}
  catch(e){showErr('No connection. Will retry.')}}
-function onErr(e){locOk=false;render();if(e.code===1)showHelp(true);showErr(e.code===1?'Location is blocked. Allow location for this site in your browser settings, then reload.':'Could not get your location yet. Make sure GPS is on.')}
+function onErr(e){locOk=false;if(e.code===1)perm='denied';render();if(e.code===1)showHelp(true);showErr(e.code===1?'Location is blocked. Allow location for this site in your browser settings, then reload.':'Could not get your location yet. Make sure GPS is on.')}
 async function requestWake(){try{if('wakeLock' in navigator&&!wake){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null})}}catch(e){}}
 function releaseWake(){if(wake){wake.release();wake=null}}
 $('allowBtn').onclick=askNow;
+$('reloadBtn').onclick=()=>location.reload();
+$('copyLinkBtn').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('copyLinkBtn').textContent='Copied. Paste it in your browser'}catch(e){window.prompt('Copy this link',location.href)}};
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){refresh();if(state.status==='active')requestWake()}});
 $('pauseBtn').onclick=async()=>{state=await post('control',{action:'pause'});render()};
 $('stopBtn').onclick=async()=>{state=await post('control',{action:'stop'});render()};
 $('resumeBtn').onclick=async()=>{showErr('');state=await post('control',{action:'resume',hours:$('hours').value});render()};
 $('delBtn').onclick=async()=>{if(!confirm('Delete your data and remove yourself from {{ owner }}\'s map?'))return;
  await post('control',{action:'delete'});stopWatch();document.body.innerHTML='<main class="wrap"><h1>Your data is deleted</h1><p class="muted">{{ owner }} can no longer see you. You can close this page.</p></main>'};
-setInterval(tickRemain,1000);setInterval(refresh,20000);render();
+setInterval(tickRemain,1000);setInterval(refresh,20000);checkPerm().then(render,render);
 </script></body></html>
