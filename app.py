@@ -22,9 +22,23 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-db_url = os.environ.get("DATABASE_URL", "sqlite:///familycircle.db")
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+def resolve_db_url():
+    raw = (os.environ.get("DATABASE_URL") or "").strip().strip('"').strip("'")
+    if not raw:
+        return "sqlite:///familycircle.db"
+    for prefix in ("postgres://", "postgresql://"):
+        if raw.startswith(prefix):
+            raw = "postgresql+psycopg2://" + raw[len(prefix):]
+            break
+    if not raw.startswith(("postgresql://", "postgresql+psycopg2://", "sqlite:///")):
+        print("WARNING: DATABASE_URL is not a valid database URL (got %r). "
+              "In Railway, set it to ${{Postgres.DATABASE_URL}} using your Postgres service's exact name. "
+              "Falling back to a temporary SQLite file; data will be lost on redeploy." % raw[:40], flush=True)
+        return "sqlite:///familycircle.db"
+    return raw
+
+
+db_url = resolve_db_url()
 
 app.config.update(
     SQLALCHEMY_DATABASE_URI=db_url,
