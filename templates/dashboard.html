@@ -44,7 +44,6 @@
 
   <div class="invite-panel" id="installBox" hidden><h2>Install as an app</h2><p class="small muted" id="installText" style="margin:.2rem 0 .6rem"></p><button id="installBtn" class="primary small" hidden>Install</button></div>
   <div id="people"></div>
-  <p class="small muted" id="note" style="margin-top:1rem">Speed comes from each phone’s GPS. Battery needs Chrome on Android; iPhone browsers don’t share it, and no web page can see whether someone is on a call. Nothing is saved as history; pausing or stopping erases a person’s position right away.</p>
  </div>
 </section>
 
@@ -215,13 +214,13 @@ function updateCard(p,dn){
  r.val.style.strokeDasharray=(ARC*Math.min(kmh/MAX_GAUGE_KMH,1))+' 138.2';
  r.bat.hidden=!live;
  if(live){const has=p.battery!=null;
-  r.batTxt.textContent=has?p.battery+'%'+(p.charging?' ⚡':''):'n/a';
+  r.batTxt.textContent=has?p.battery+'%'+(p.charging?' ⚡':''):'No battery info';
   r.bat.title=has?'Battery'+(p.charging?', charging':''):'This phone’s browser does not share battery level (iPhones don’t)';
   r.bat.style.setProperty('--lvl',has?p.battery+'%':'0%');
   r.bat.classList.toggle('low',has&&p.battery<=15&&!p.charging);r.bat.classList.toggle('chg',!!p.charging)}
  // action buttons only change when state does, so rebuilding them doesn't eat clicks
  const following=follow&&selected===p.id;
- const sig=[p.status,!!p.invite_url,following].join('|');
+ const sig=[p.status,live,!!p.invite_url,following].join('|');
  if(sig!==r.sig){r.sig=sig;r.actions.textContent='';
   if(live){r.actions.appendChild(actionButton(following?'Stop following':'Follow on map','',()=>{selected=p.id;setFollow(!(follow&&selected===p.id));render()}));
    r.actions.appendChild(actionButton('Directions','',()=>openRide('dir',p.id)));
