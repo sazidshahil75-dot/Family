@@ -141,3 +141,5 @@ body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
  .panel{bottom:calc(8px + env(safe-area-inset-bottom))}
  .toolbar{top:calc(8px + env(safe-area-inset-top))}
 }
+
+.read{max-width:6.5rem}.bat{flex-wrap:wrap;justify-content:flex-end;line-height:1.2}
