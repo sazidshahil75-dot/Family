@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Family Circle</title></head><body>
+<main class="wrap stack"><h1>Family Circle</h1>
+<p class="muted">Owner sign-in for {{ owner }}.</p>
+<form method="post" class="card stack">
+<label>Password<input type="password" name="password" autocomplete="current-password" required autofocus></label>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<button class="primary">Sign in</button></form></main></body></html>

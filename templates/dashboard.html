@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Family Circle</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+</head><body>
+<div class="app"><div id="map"></div>
+<aside><header><h1 style="margin:0;font-size:1.4rem">Family Circle</h1>
+<form method="post" action="{{ url_for('logout') }}"><button class="small">Sign out</button></form></header>
+<form id="inviteForm" class="card stack" style="margin-bottom:1rem">
+<label>Invite someone<input id="inviteName" placeholder="Name, for example Mom" maxlength="60" required></label>
+<button class="primary">Create invite link</button></form>
+<div class="row" style="margin-bottom:.8rem"><button id="fitBtn" class="small">Show everyone</button></div>
+<div id="people"></div>
+<p class="small muted" id="mapNote"></p></aside></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const GKEY={{ gmaps_key|tojson }};
+const $=id=>document.getElementById(id);
+let people=[],markers={},map,fitted=false,gInfo=null,ready=false;
+let useGoogle=!!GKEY;
+function initial(n){return (n||'?').trim().charAt(0).toUpperCase()}
+function ago(iso){const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<60?s+'s ago':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'}
+function infoNode(p){const d=document.createElement('div');const b=document.createElement('b');b.textContent=p.name;d.appendChild(b);
+ const l=document.createElement('div');l.textContent=detail(p);d.appendChild(l);return d}
+function detail(p){return 'Updated '+ago(p.updated_at)+(p.battery!=null?' · battery '+p.battery+'%':'')+(p.accuracy!=null?' · ±'+Math.round(p.accuracy)+' m':'')}
+/* ---- map layer (Google if key set, otherwise OpenStreetMap) ---- */
+function initLeaflet(){
+ map=L.map('map').setView([23.8,90.4],5);
+ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+ $('mapNote').textContent='Using the free OpenStreetMap map. Add GOOGLE_MAPS_API_KEY to use Google Maps.';ready=true;draw()}
+window.initGoogle=function(){
+ map=new google.maps.Map($('map'),{center:{lat:23.8,lng:90.4},zoom:5,streetViewControl:false,mapTypeControl:false});
+ gInfo=new google.maps.InfoWindow();ready=true;draw()};
+function setMarker(p){
+ const pos={lat:p.lat,lng:p.lng};let m=markers[p.id];
+ if(useGoogle){
+  if(!m){m=markers[p.id]=new google.maps.Marker({map,position:pos,label:initial(p.name),title:p.name});
+   m.addListener('click',()=>{gInfo.setContent(infoNode(people.find(x=>x.id===p.id)));gInfo.open(map,m)})}
+  else m.setPosition(pos)}
+ else{
+  if(!m){m=markers[p.id]=L.marker([p.lat,p.lng],{title:p.name,icon:L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],
+   html:'<div class="avatar" style="width:34px;height:34px;border:2px solid #fff;box-shadow:0 1px 4px #0006"></div>'})}).addTo(map);
+   m.getElement().firstChild.textContent=initial(p.name);
+   m.on('click',()=>m.bindPopup(infoNode(people.find(x=>x.id===p.id))).openPopup())}
+  else m.setLatLng([p.lat,p.lng])}}
+function removeMarker(id){const m=markers[id];if(!m)return;useGoogle?m.setMap(null):map.removeLayer(m);delete markers[id]}
+function fit(){const pts=people.filter(p=>p.lat!=null);if(!pts.length)return;
+ if(useGoogle){const b=new google.maps.LatLngBounds();pts.forEach(p=>b.extend({lat:p.lat,lng:p.lng}));map.fitBounds(b,60);if(pts.length===1)map.setZoom(16)}
+ else{const b=L.latLngBounds(pts.map(p=>[p.lat,p.lng]));map.fitBounds(b,{padding:[60,60],maxZoom:16})}}
+function focus(p){if(p.lat==null)return;useGoogle?(map.panTo({lat:p.lat,lng:p.lng}),map.setZoom(16)):map.setView([p.lat,p.lng],16)}
+/* ---- data + list ---- */
+function draw(){
+ if(!ready)return;
+ const live=new Set(people.filter(p=>p.lat!=null).map(p=>p.id));
+ Object.keys(markers).forEach(id=>{if(!live.has(+id))removeMarker(id)});
+ people.filter(p=>p.lat!=null).forEach(setMarker);
+ if(!fitted&&live.size){fit();fitted=true}
+ const box=$('people');box.textContent='';
+ if(!people.length){const e=document.createElement('p');e.className='muted';e.textContent='No one yet. Create an invite link and send it to someone.';box.appendChild(e)}
+ const labels={active:'Sharing',paused:'Paused',stopped:'Stopped',invited:'Invited',expired_invite:'Invite expired'};
+ people.forEach(p=>{
+  const el=document.createElement('div');el.className='person'+(p.status==='active'?' clickable':' off');
+  const av=document.createElement('div');av.className='avatar';av.textContent=initial(p.name);
+  const who=document.createElement('div');who.className='who';
+  const nm=document.createElement('b');nm.textContent=p.name;
+  const sub=document.createElement('span');sub.className='small muted';
+  sub.textContent=p.status==='active'?(p.lat!=null?detail(p):'Waiting for first location'):p.status==='paused'?'Paused. You cannot see them':p.status==='stopped'?'Stopped sharing':p.status==='invited'?'Has not agreed yet':'Create a new invite';
+  who.append(nm,sub);
+  const pill=document.createElement('span');pill.className='pill '+p.status;pill.textContent=labels[p.status]||p.status;
+  const rm=document.createElement('button');rm.className='small';rm.textContent='Remove';rm.onclick=async e=>{e.stopPropagation();
+   if(!confirm('Remove '+p.name+'? Their data is deleted.'))return;await api('/api/people/'+p.id+'/remove',{});load()};
+  el.append(av,who,pill,rm);if(p.status==='active')el.onclick=()=>focus(p);box.appendChild(el);
+  if(p.invite_url){const ib=document.createElement('div');ib.className='invite-box';ib.textContent=p.invite_url;
+   const cp=document.createElement('button');cp.className='small';cp.textContent='Copy invite link';cp.style.marginTop='.4rem';
+   cp.onclick=async e=>{e.stopPropagation();try{await navigator.clipboard.writeText(p.invite_url);cp.textContent='Copied'}catch(x){cp.textContent='Select and copy the link above'}};
+   box.append(ib,cp)}})}
+async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body)});
+ if(r.status===401)location.href='/login';return r.json()}
+async function load(){try{const r=await fetch('/api/people');if(r.status===401){location.href='/login';return}people=await r.json();draw()}catch(e){}}
+$('inviteForm').onsubmit=async e=>{e.preventDefault();const n=$('inviteName').value.trim();if(!n)return;await api('/api/invite',{name:n});$('inviteName').value='';load()};
+$('fitBtn').onclick=fit;
+if(useGoogle){const s=document.createElement('script');s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GKEY)+'&callback=initGoogle&loading=async';s.async=true;
+ s.onerror=()=>{useGoogle=false;initLeaflet()};document.head.appendChild(s)}else{initLeaflet()}
+load();setInterval(load,5000);setInterval(()=>{if(ready)draw()},30000);
+</script></body></html>

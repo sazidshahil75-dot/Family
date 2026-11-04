@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Sharing with {{ owner }}</title></head><body>
+<div id="banner" class="banner stopped" role="status" aria-live="polite"><span class="dot"></span><span id="bannerText"></span></div>
+<main class="wrap stack">
+<h1>Hi {{ p.name }}</h1>
+<p id="explain" class="muted"></p>
+<div class="card stack">
+<div><b>Status:</b> <span id="statusLine"></span></div>
+<div class="small muted" id="lastSent"></div>
+<div class="small muted" id="remaining"></div>
+<p class="error" id="err" hidden></p>
+<div id="resumeBox" hidden>
+<label>Share for<select id="hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="8">8 hours</option><option value="">Until I stop it</option></select></label></div>
+<div class="row">
+<button id="pauseBtn" class="primary">Pause</button>
+<button id="resumeBtn" class="primary">Start sharing</button>
+<button id="stopBtn">Stop</button></div>
+</div>
+<div class="card stack"><h2>Delete my data</h2>
+<p class="small muted">Removes you from {{ owner }}'s map completely and makes this link stop working.</p>
+<button id="delBtn" class="danger">Delete everything</button></div>
+<p class="small muted">Keep this page open and your screen on. Phones stop sharing location when the page is closed or the screen locks. Bookmark this page to come back to it.</p>
+</main>
+<script>
+const TOKEN={{ token|tojson }};let state={{ state|tojson }};
+let watchId=null,lastSent=0,wake=null;const $=id=>document.getElementById(id);
+async function post(path,body){const r=await fetch('/api/s/'+TOKEN+'/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body||{})});return r.json()}
+function showErr(m){$('err').hidden=!m;$('err').textContent=m||''}
+function fmtRemain(ms){const m=Math.max(0,Math.round(ms/60000));return m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min'}
+function render(){
+ const s=state.status,b=$('banner');b.className='banner '+(s==='active'?'active':s==='paused'?'paused':'stopped');
+ $('bannerText').textContent=s==='active'?'SHARING LIVE with {{ owner }}':s==='paused'?'PAUSED. {{ owner }} cannot see you':'NOT SHARING. {{ owner }} cannot see you';
+ $('statusLine').textContent=s==='active'?'Sharing live':s==='paused'?'Paused':'Stopped';
+ $('explain').textContent=s==='active'?'{{ owner }} can see your location on a map right now.':'{{ owner }} cannot see where you are.';
+ $('pauseBtn').hidden=s!=='active';$('stopBtn').hidden=s==='stopped';
+ $('resumeBtn').hidden=s==='active';$('resumeBtn').textContent=s==='paused'?'Resume sharing':'Start sharing again';
+ $('resumeBox').hidden=s==='active';
+ if(s==='active'){startWatch();requestWake()}else{stopWatch();releaseWake()}
+ tickRemain()}
+function tickRemain(){const e=state.expires_at;$('remaining').textContent=(state.status==='active'&&e)?'Sharing ends automatically in '+fmtRemain(new Date(e)-Date.now()):'';
+ if(state.status==='active'&&e&&new Date(e)<=Date.now())refresh()}
+async function refresh(){try{state=await (await fetch('/api/s/'+TOKEN+'/state')).json();render()}catch(e){}}
+function startWatch(){
+ if(watchId!==null)return;
+ if(!navigator.geolocation){showErr('This browser cannot share location.');return}
+ watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000})}
+function stopWatch(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
+async function onPos(pos){
+ const now=Date.now();if(now-lastSent<8000)return;lastSent=now;showErr('');
+ let battery=null;try{if(navigator.getBattery){battery=Math.round((await navigator.getBattery()).level*100)}}catch(e){}
+ try{const r=await fetch('/api/s/'+TOKEN+'/location',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},
+  body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery})});
+  const j=await r.json();if(j.status){state=j;if(r.status===409)render()}
+  $('lastSent').textContent='Last sent '+new Date().toLocaleTimeString()+' (accurate to about '+Math.round(pos.coords.accuracy)+' m)'}
+ catch(e){showErr('No connection. Will retry.')}}
+function onErr(e){showErr(e.code===1?'Location is blocked. Allow location for this site in your browser settings, then reload.':'Could not get your location yet. Make sure GPS is on.')}
+async function requestWake(){try{if('wakeLock' in navigator&&!wake){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null})}}catch(e){}}
+function releaseWake(){if(wake){wake.release();wake=null}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){refresh();if(state.status==='active')requestWake()}});
+$('pauseBtn').onclick=async()=>{state=await post('control',{action:'pause'});render()};
+$('stopBtn').onclick=async()=>{state=await post('control',{action:'stop'});render()};
+$('resumeBtn').onclick=async()=>{showErr('');state=await post('control',{action:'resume',hours:$('hours').value});render()};
+$('delBtn').onclick=async()=>{if(!confirm('Delete your data and remove yourself from {{ owner }}\'s map?'))return;
+ await post('control',{action:'delete'});stopWatch();document.body.innerHTML='<main class="wrap"><h1>Your data is deleted</h1><p class="muted">{{ owner }} can no longer see you. You can close this page.</p></main>'};
+setInterval(tickRemain,1000);setInterval(refresh,20000);render();
+</script></body></html>
