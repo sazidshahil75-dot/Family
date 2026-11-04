@@ -1,0 +1,48 @@
+:root{--ink:#10262b;--muted:#5d6f73;--paper:#f5f7f4;--card:#fff;--line:#d9e0dc;
+--live:#12936a;--live-bg:#e1f5ec;--pause:#b36b00;--pause-bg:#fdf0d8;--stop:#6b777a;--stop-bg:#e9edec;
+--danger:#b3261e;--accent:#0b5d6b;--accent-ink:#fff}
+@media(prefers-color-scheme:dark){:root{--ink:#e6efed;--muted:#9bb0b3;--paper:#0c1a1d;--card:#13262a;--line:#27413f;
+--live:#3ccf9d;--live-bg:#0f3a2d;--pause:#f0b04a;--pause-bg:#3b2c0f;--stop:#9fb0b2;--stop-bg:#1e3033;
+--danger:#ff8a80;--accent:#4cc3d6;--accent-ink:#06242a}}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 "Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--paper);color:var(--ink)}
+h1,h2,h3{line-height:1.15;margin:0 0 .5rem;letter-spacing:-.01em}
+h1{font-size:1.9rem}h2{font-size:1.25rem}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);padding:.6rem 1rem;border-radius:10px;min-height:44px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.danger{color:var(--danger);border-color:var(--danger)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input,select{padding:.6rem .8rem;border:1px solid var(--line);border-radius:10px;background:var(--card);min-height:44px;width:100%}
+.wrap{max-width:560px;margin:0 auto;padding:1.5rem 1.1rem 3rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.1rem}
+.muted{color:var(--muted)}.small{font-size:.875rem}
+.error{color:var(--danger);font-weight:600}
+.stack>*+*{margin-top:1rem}.row{display:flex;gap:.6rem;flex-wrap:wrap}.row>*{flex:1}
+ul.plain{list-style:none;padding:0;margin:0}
+ul.plain li{padding:.35rem 0 .35rem 1.4rem;position:relative}
+ul.plain li::before{content:"";position:absolute;left:.2rem;top:.9rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent)}
+ul.no li::before{background:var(--danger)}
+.banner{position:sticky;top:0;z-index:5;padding:.9rem 1.1rem;font-weight:700;display:flex;align-items:center;gap:.6rem}
+.banner .dot{width:.8rem;height:.8rem;border-radius:50%;background:currentColor}
+.banner.active{background:var(--live-bg);color:var(--live)}
+.banner.active .dot{animation:pulse 1.6s ease-out infinite}
+.banner.paused{background:var(--pause-bg);color:var(--pause)}
+.banner.stopped{background:var(--stop-bg);color:var(--stop)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 currentColor}100%{box-shadow:0 0 0 .8rem transparent}}
+@media(prefers-reduced-motion:reduce){.banner.active .dot{animation:none}}
+.app{display:grid;grid-template-columns:1fr 360px;height:100vh;height:100dvh}
+#map{height:100%;min-height:50vh;background:var(--stop-bg)}
+aside{overflow:auto;padding:1rem;border-left:1px solid var(--line);background:var(--paper)}
+aside header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+.person{display:flex;gap:.7rem;align-items:center;padding:.75rem;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:.6rem}
+.person.clickable{cursor:pointer}
+.avatar{width:2.4rem;height:2.4rem;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--accent);color:var(--accent-ink);flex:none}
+.person.off .avatar{background:var(--stop)}
+.person .who{flex:1;min-width:0}.person .who b{display:block;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:.78rem;padding:.1rem .55rem;border-radius:99px;font-weight:600;white-space:nowrap}
+.pill.active{background:var(--live-bg);color:var(--live)}.pill.paused{background:var(--pause-bg);color:var(--pause)}
+.pill.stopped,.pill.invited,.pill.expired_invite{background:var(--stop-bg);color:var(--stop)}
+.invite-box{word-break:break-all;font-size:.8rem;margin-top:.4rem;padding:.4rem;border:1px dashed var(--line);border-radius:8px}
+@media(max-width:800px){.app{grid-template-columns:1fr;grid-template-rows:55vh 1fr;height:auto}aside{border-left:0;border-top:1px solid var(--line)}}
