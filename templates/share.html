@@ -8,6 +8,11 @@
 <div class="small muted" id="lastSent"></div>
 <div class="small muted" id="remaining"></div>
 <p class="error" id="err" hidden></p>
+<button id="allowBtn" class="primary" hidden>Allow location</button>
+<div id="help" class="card small" hidden><b>iPhone: turn location on for Safari</b><ol style="margin:.4rem 0 0;padding-left:1.2rem">
+<li>Tap <b>aA</b> in the address bar, then <b>Website Settings</b>, then <b>Location</b>, then <b>Allow</b>.</li>
+<li>If that is missing: Settings, <b>Privacy &amp; Security</b>, <b>Location Services</b>, <b>Safari Websites</b>, choose <b>While Using the App</b>.</li>
+<li>Come back here, reload the page and tap <b>Allow location</b>. On Android Chrome: tap the lock icon, then Permissions, then Location.</li></ol></div>
 <div id="resumeBox" hidden>
 <label>Share for<select id="hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="8">8 hours</option><option value="">Until I stop it</option></select></label></div>
 <div class="row">
@@ -22,23 +27,27 @@
 </main>
 <script>
 const TOKEN={{ token|tojson }};let state={{ state|tojson }};
-let watchId=null,lastSent=0,wake=null;const $=id=>document.getElementById(id);
+let watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0;const $=id=>document.getElementById(id);
 async function post(path,body){const r=await fetch('/api/s/'+TOKEN+'/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body||{})});return r.json()}
 function showErr(m){$('err').hidden=!m;$('err').textContent=m||''}
 function fmtRemain(ms){const m=Math.max(0,Math.round(ms/60000));return m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min'}
 function render(){
- const s=state.status,b=$('banner');b.className='banner '+(s==='active'?'active':s==='paused'?'paused':'stopped');
- $('bannerText').textContent=s==='active'?'SHARING LIVE with {{ owner }}':s==='paused'?'PAUSED. {{ owner }} cannot see you':'NOT SHARING. {{ owner }} cannot see you';
- $('statusLine').textContent=s==='active'?'Sharing live':s==='paused'?'Paused':'Stopped';
- $('explain').textContent=s==='active'?'{{ owner }} can see your location on a map right now.':'{{ owner }} cannot see where you are.';
+ const s=state.status,b=$('banner'),live=s==='active'&&locOk,wait=s==='active'&&!locOk;b.className='banner '+(live?'active':(s==='paused'||wait)?'paused':'stopped');
+ $('bannerText').textContent=live?'SHARING LIVE with {{ owner }}':wait?'WAITING FOR YOUR LOCATION. {{ owner }} cannot see you yet':s==='paused'?'PAUSED. {{ owner }} cannot see you':'NOT SHARING. {{ owner }} cannot see you';
+ $('statusLine').textContent=live?'Sharing live':wait?'On, but no location yet':s==='paused'?'Paused':'Stopped';
+ $('explain').textContent=live?'{{ owner }} can see your location on a map right now.':wait?'Allow location below. Until your phone shares it, {{ owner }} sees nothing.':'{{ owner }} cannot see where you are.';
+ $('allowBtn').hidden=!wait;if(!wait)$('help').hidden=true;
  $('pauseBtn').hidden=s!=='active';$('stopBtn').hidden=s==='stopped';
  $('resumeBtn').hidden=s==='active';$('resumeBtn').textContent=s==='paused'?'Resume sharing':'Start sharing again';
  $('resumeBox').hidden=s==='active';
  if(s==='active'){startWatch();requestWake()}else{stopWatch();releaseWake()}
  tickRemain()}
-function tickRemain(){const e=state.expires_at;$('remaining').textContent=(state.status==='active'&&e)?'Sharing ends automatically in '+fmtRemain(new Date(e)-Date.now()):'';
+function tickRemain(){if(locOk&&Date.now()-lastOkAt>90000){locOk=false;render();return}
+ const e=state.expires_at;$('remaining').textContent=(state.status==='active'&&e)?'Sharing ends automatically in '+fmtRemain(new Date(e)-Date.now()):'';
  if(state.status==='active'&&e&&new Date(e)<=Date.now())refresh()}
 async function refresh(){try{state=await (await fetch('/api/s/'+TOKEN+'/state')).json();render()}catch(e){}}
+function showHelp(on){$('help').hidden=!on}
+function askNow(){showErr('');stopWatch();navigator.geolocation.getCurrentPosition(p=>{lastSent=0;onPos(p);startWatch()},e=>{onErr(e);startWatch()},{enableHighAccuracy:true,timeout:20000})}
 function startWatch(){
  if(watchId!==null)return;
  if(!navigator.geolocation){showErr('This browser cannot share location.');return}
@@ -49,12 +58,14 @@ async function onPos(pos){
  let battery=null;try{if(navigator.getBattery){battery=Math.round((await navigator.getBattery()).level*100)}}catch(e){}
  try{const r=await fetch('/api/s/'+TOKEN+'/location',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},
   body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery})});
-  const j=await r.json();if(j.status){state=j;if(r.status===409)render()}
+  const j=await r.json();if(j.status){state=j}
+  if(r.ok){locOk=true;lastOkAt=Date.now();showHelp(false)}else{locOk=false}render();
   $('lastSent').textContent='Last sent '+new Date().toLocaleTimeString()+' (accurate to about '+Math.round(pos.coords.accuracy)+' m)'}
  catch(e){showErr('No connection. Will retry.')}}
-function onErr(e){showErr(e.code===1?'Location is blocked. Allow location for this site in your browser settings, then reload.':'Could not get your location yet. Make sure GPS is on.')}
+function onErr(e){locOk=false;render();if(e.code===1)showHelp(true);showErr(e.code===1?'Location is blocked. Allow location for this site in your browser settings, then reload.':'Could not get your location yet. Make sure GPS is on.')}
 async function requestWake(){try{if('wakeLock' in navigator&&!wake){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>{wake=null})}}catch(e){}}
 function releaseWake(){if(wake){wake.release();wake=null}}
+$('allowBtn').onclick=askNow;
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){refresh();if(state.status==='active')requestWake()}});
 $('pauseBtn').onclick=async()=>{state=await post('control',{action:'pause'});render()};
 $('stopBtn').onclick=async()=>{state=await post('control',{action:'stop'});render()};
