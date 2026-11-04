@@ -1,0 +1,7 @@
+<link rel="manifest" href="{{ url_for('manifest', s=pwa_token) if pwa_token else url_for('manifest') }}">
+<meta name="theme-color" content="#eef4f6" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#071218" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Family Circle"><meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<script src="{{ url_for('static', filename='pwa.js') }}" defer></script>

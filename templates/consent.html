@@ -1,14 +1,16 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Share your location with {{ owner }}?</title></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">{% include '_pwa.html' %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Share your location with {{ owner }}?</title></head><body>
 <main class="wrap stack">
 <h1>{{ owner }} is asking to see your location</h1>
 <p>Hi {{ name }}. Read what this does, then choose. Nothing is shared until you tap the button below.</p>
 <div class="card"><h2>What {{ owner }} will see</h2><ul class="plain">
 <li>Your live position on a map, while you share</li>
 <li>How fast you are moving and which direction, for example walking or in a vehicle</li>
-<li>How accurate it is, your battery level and when it last updated</li></ul></div>
+<li>Your phone battery level and whether it is charging (only if your browser provides it)</li>
+<li>How accurate your position is and when it last updated</li></ul></div>
 <div class="card"><h2>What stays private</h2><ul class="plain no">
 <li>No history. Only your latest position and speed are kept, and it is erased when you pause or stop</li>
 <li>No one except {{ owner }} can see it</li>
+<li>Your calls, messages, apps and contacts are never read. This page cannot see them</li>
 <li>Sharing only works while this page is open on your phone</li></ul></div>
 <div class="card"><h2>You are in control</h2><ul class="plain">
 <li>A <b>SHARING LIVE</b> banner is always shown while you are visible</li>

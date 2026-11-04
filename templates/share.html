@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Sharing with {{ owner }}</title></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">{% set pwa_token = token %}{% include '_pwa.html' %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Sharing with {{ owner }}</title></head><body>
 <div id="banner" class="banner stopped" role="status" aria-live="polite"><span class="dot"></span><span id="bannerText"></span></div>
 <main class="wrap stack">
 <h1>Hi {{ p.name }}</h1>
@@ -6,6 +6,7 @@
 <div class="card stack">
 <div><b>Status:</b> <span id="statusLine"></span></div>
 <div class="speedbox" id="speedBox" hidden><div><b id="spdNum">0</b><span>km/h</span></div><div class="small muted" id="spdMode"></div></div>
+<div class="small muted" id="batLine"></div>
 <div class="small muted" id="lastSent"></div>
 <div class="small muted" id="remaining"></div>
 <p class="error" id="err" hidden></p>
@@ -19,7 +20,8 @@
 <li>Tap the <b>lock icon</b> (or the ⋮ menu, then <b>Settings</b>) next to the address, then <b>Permissions</b> (or <b>Site settings</b>), then <b>Location</b>, then <b>Allow</b>.</li></ol>
 <p style="margin:.5rem 0 .2rem"><b>iPhone (Safari)</b></p><ol style="margin:0;padding-left:1.2rem">
 <li>Tap <b>aA</b> in the address bar, then <b>Website Settings</b>, then <b>Location</b>, then <b>Allow</b>.</li>
-<li>If that is missing: Settings, <b>Privacy &amp; Security</b>, <b>Location Services</b>, <b>Safari Websites</b>, choose <b>While Using the App</b>.</li></ol>
+<li>If Safari never asks: open the <b>Settings</b> app, <b>Privacy &amp; Security</b>, <b>Location Services</b>. Turn <b>Location Services</b> on, then tap <b>Safari Websites</b> and choose <b>While Using the App</b> (or <b>Ask</b>).</li>
+<li>Opened from WhatsApp or another app? Copy the link and paste it into Safari itself.</li></ol>
 <button id="reloadBtn" style="margin-top:.7rem">I turned it on. Reload</button></div>
 <div id="resumeBox" hidden>
 <label>Share for<select id="hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="8">8 hours</option><option value="">Until I stop it</option></select></label></div>
@@ -28,6 +30,7 @@
 <button id="resumeBtn" class="primary">Start sharing</button>
 <button id="stopBtn">Stop</button></div>
 </div>
+<div class="card stack" id="installBox" hidden><h2>Install as an app</h2><p class="small muted" id="installText"></p><button id="installBtn" class="primary" hidden>Install</button></div>
 <div class="card stack"><h2>Delete my data</h2>
 <p class="small muted">Removes you from {{ owner }}'s map completely and makes this link stop working.</p>
 <button id="delBtn" class="danger">Delete everything</button></div>
@@ -35,7 +38,7 @@
 </main>
 <script>
 const TOKEN={{ token|tojson }};let state={{ state|tojson }};
-let perm=null,watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0,prevFix=null;const $=id=>document.getElementById(id);
+let perm=null,lastPos=null,watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0,prevFix=null;const $=id=>document.getElementById(id);
 const inApp=/FBAN|FBAV|FB_IAB|Instagram|Messenger|Snapchat|TikTok|Line\/|MicroMessenger|Twitter|GSA\/|; wv\)/i.test(navigator.userAgent);
 async function checkPerm(){try{const q=await navigator.permissions.query({name:'geolocation'});perm=q.state;
  q.onchange=()=>{perm=q.state;if(perm==='granted'){showErr('');stopWatch();locOk=false}render()}}catch(e){perm=null}}
@@ -73,11 +76,13 @@ function deviceSpeed(pos){let v=pos.coords.speed;const t=pos.timestamp||Date.now
   if(prevFix&&t-prevFix.t>=1000&&t-prevFix.t<=120000){const d=dist(prevFix.lat,prevFix.lng,c.latitude,c.longitude);v=d>Math.max(c.accuracy||0,10)?d/((t-prevFix.t)/1000):0}}
  prevFix={lat:c.latitude,lng:c.longitude,t};return v}
 async function onPos(pos){
+ if(!pos.hb)lastPos=pos;
  const spd=deviceSpeed(pos);showSpeed(spd);
  const now=Date.now();if(now-lastSent<8000)return;lastSent=now;showErr('');
- let battery=null;try{if(navigator.getBattery){battery=Math.round((await navigator.getBattery()).level*100)}}catch(e){}
+ let battery=null,charging=null;try{if(navigator.getBattery){const b=await navigator.getBattery();battery=Math.round(b.level*100);charging=!!b.charging}}catch(e){}
+ $('batLine').textContent=battery!=null?'Battery '+battery+'%'+(charging?' (charging)':''):'Battery level is not available in this browser, so '+'{{ owner }}'+' will not see it.';
  try{const r=await fetch('/api/s/'+TOKEN+'/location',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},
-  body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery,
+  body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery,charging,
    speed:(typeof pos.coords.speed==='number'&&isFinite(pos.coords.speed))?pos.coords.speed:null,
    heading:(typeof pos.coords.heading==='number'&&isFinite(pos.coords.heading))?pos.coords.heading:null})});
   const j=await r.json();if(j.status){state=j}
@@ -96,5 +101,6 @@ $('stopBtn').onclick=async()=>{state=await post('control',{action:'stop'});rende
 $('resumeBtn').onclick=async()=>{showErr('');state=await post('control',{action:'resume',hours:$('hours').value});render()};
 $('delBtn').onclick=async()=>{if(!confirm('Delete your data and remove yourself from {{ owner }}\'s map?'))return;
  await post('control',{action:'delete'});stopWatch();document.body.innerHTML='<main class="wrap"><h1>Your data is deleted</h1><p class="muted">{{ owner }} can no longer see you. You can close this page.</p></main>'};
+setInterval(()=>{if(state.status==='active'&&lastPos&&Date.now()-lastSent>=15000)onPos({hb:true,timestamp:Date.now(),coords:{latitude:lastPos.coords.latitude,longitude:lastPos.coords.longitude,accuracy:lastPos.coords.accuracy,speed:null,heading:null}})},5000);
 setInterval(tickRemain,1000);setInterval(refresh,20000);checkPerm().then(render,render);
 </script></body></html>

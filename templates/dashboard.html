@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="dark">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">{% include '_pwa.html' %}<meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Instrument+Sans:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
@@ -42,8 +42,9 @@
    <div id="invites"></div>
   </div>
 
+  <div class="invite-panel" id="installBox" hidden><h2>Install as an app</h2><p class="small muted" id="installText" style="margin:.2rem 0 .6rem"></p><button id="installBtn" class="primary small" hidden>Install</button></div>
   <div id="people"></div>
-  <p class="small muted" id="note" style="margin-top:1rem">Speed comes from each phone’s GPS. Nothing is saved as history; pausing or stopping erases a person’s position right away.</p>
+  <p class="small muted" id="note" style="margin-top:1rem">Speed comes from each phone’s GPS. Battery needs Chrome on Android; iPhone browsers don’t share it, and no web page can see whether someone is on a call. Nothing is saved as history; pausing or stopping erases a person’s position right away.</p>
  </div>
 </section>
 
@@ -75,6 +76,20 @@ function describe(p){
  if(!isFresh(p))return 'Last seen '+ago(p.updated_at);
  if(isMoving(p)){const m=mode(p.speed_kmh);return m.i+' '+m.t+(p.heading!=null?', heading '+compass(p.heading):'')}
  return 'Standing still'}
+
+/* ---------- rides / directions (open other apps; nothing is booked for you) ---------- */
+const mapsLink=p=>'https://www.google.com/maps?q='+p.lat+','+p.lng;
+const dirLink=p=>'https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lng;
+const uberLink=(p,name)=>'https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]='+p.lat+'&dropoff[longitude]='+p.lng+'&dropoff[nickname]='+encodeURIComponent(name);
+function rideLinks(p){const row=el('div'),dn=displayNames()[p.id];
+ [['Directions',dirLink(p)],['Uber to them',uberLink(p,dn)]].forEach(([t,h],i)=>{
+  if(i)row.append(' · ');const a=el('a',null,t);a.href=h;a.target='_blank';a.rel='noopener';a.style.color='var(--accent)';row.appendChild(a)});
+ return row}
+function openRide(kind,id,btn){ // read the person's latest position at click time
+ const p=people.find(x=>x.id===id);if(!p||!isLive(p))return;const dn=displayNames()[id];
+ if(kind==='uber')window.open(uberLink(p,dn),'_blank','noopener');
+ else if(kind==='dir')window.open(dirLink(p),'_blank','noopener');
+ else if(kind==='pathao'){window.open('https://pathao.com','_blank','noopener');copyText(mapsLink(p),btn,'Location copied. Paste it in Pathao')}}
 
 /* ---------- map ---------- */
 const map=L.map('map',{zoomControl:false,worldCopyJump:true}).setView([23.8,90.4],6);
@@ -144,7 +159,8 @@ function popupNode(id){
  const big=el('div','big',isMoving(p)?String(Math.round(p.speed_kmh)):'0');big.appendChild(el('small',null,'km/h'));box.appendChild(big);
  box.appendChild(el('div',null,describe(p)||''));
  box.appendChild(el('div',null,'Updated '+ago(p.updated_at)+(p.accuracy!=null?' · accurate to '+Math.round(p.accuracy)+' m':'')));
- if(p.battery!=null)box.appendChild(el('div',null,'Battery '+p.battery+'%'));
+ box.appendChild(el('div',null,p.battery!=null?'Battery '+p.battery+'%'+(p.charging?', charging':''):'Battery not shared by this browser'));
+ if(isLive(p))box.appendChild(rideLinks(p));
  return box}
 
 function fit(){
@@ -192,27 +208,34 @@ function updateCard(p,dn){
  r.chip.textContent=ch[0];r.chip.className='chip '+ch[1];
  const subs={active:describe(p)||'Waiting for first location',paused:'Paused. You can’t see them',stopped:'Stopped sharing',invited:'Hasn’t agreed yet',expired_invite:'Create a new invite'};
  r.sub.textContent=subs[p.status]||'';
+ if(live&&p.battery!=null&&p.battery<=15&&!p.charging)r.sub.textContent+=' · Low battery';
  const kmh=moving?p.speed_kmh:0;
  r.num.textContent=fresh?String(Math.round(kmh)):'–';
  r.val.style.opacity=moving?1:0;
  r.val.style.strokeDasharray=(ARC*Math.min(kmh/MAX_GAUGE_KMH,1))+' 138.2';
- const showBat=live&&p.battery!=null;
- r.bat.hidden=!showBat;
- if(showBat){r.batTxt.textContent=p.battery+'%';r.bat.style.setProperty('--lvl',p.battery+'%');r.bat.classList.toggle('low',p.battery<=15)}
+ r.bat.hidden=!live;
+ if(live){const has=p.battery!=null;
+  r.batTxt.textContent=has?p.battery+'%'+(p.charging?' ⚡':''):'n/a';
+  r.bat.title=has?'Battery'+(p.charging?', charging':''):'This phone’s browser does not share battery level (iPhones don’t)';
+  r.bat.style.setProperty('--lvl',has?p.battery+'%':'0%');
+  r.bat.classList.toggle('low',has&&p.battery<=15&&!p.charging);r.bat.classList.toggle('chg',!!p.charging)}
  // action buttons only change when state does, so rebuilding them doesn't eat clicks
  const following=follow&&selected===p.id;
  const sig=[p.status,!!p.invite_url,following].join('|');
  if(sig!==r.sig){r.sig=sig;r.actions.textContent='';
-  if(live)r.actions.appendChild(actionButton(following?'Stop following':'Follow on map','',()=>{selected=p.id;setFollow(!(follow&&selected===p.id));render()}));
+  if(live){r.actions.appendChild(actionButton(following?'Stop following':'Follow on map','',()=>{selected=p.id;setFollow(!(follow&&selected===p.id));render()}));
+   r.actions.appendChild(actionButton('Directions','',()=>openRide('dir',p.id)));
+   r.actions.appendChild(actionButton('Uber','',()=>openRide('uber',p.id)));
+   r.actions.appendChild(actionButton('Pathao','',b=>openRide('pathao',p.id,b)))}
   if(p.invite_url)r.actions.appendChild(actionButton('Copy invite link','',b=>copyText(p.invite_url,b)));
   r.actions.appendChild(actionButton('Remove','danger',async()=>{
    if(!confirm('Remove '+dn[p.id]+'? Their data is deleted.'))return;
    await api('/api/people/'+p.id+'/remove',{});if(selected===p.id)selected=null;load()}))}
  return r.root}
 
-async function copyText(t,btn){const old=btn.textContent;
- try{await navigator.clipboard.writeText(t);btn.textContent='Copied'}catch(e){window.prompt('Copy this link',t)}
- setTimeout(()=>btn.textContent=old,1600)}
+async function copyText(t,btn,msg){const old=btn.textContent;
+ try{await navigator.clipboard.writeText(t);btn.textContent=msg||'Copied'}catch(e){window.prompt('Copy this link',t)}
+ setTimeout(()=>btn.textContent=old,msg?3500:1600)}
 
 /* ---------- invites ---------- */
 function renderInvites(){
