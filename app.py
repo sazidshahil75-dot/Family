@@ -1,13 +1,15 @@
 """Family Circle - consent-based live location sharing.
 
 Rules enforced on the server (not just in the UI):
-  * A person only becomes visible after they open their invite link and agree.
+  * A person only becomes visible after they open an invite link and agree.
+    One invite link can be used by many people; each one agrees for themselves.
   * Location is accepted and shown ONLY while their status is "active".
   * Pause / stop / expiry immediately erases the stored location.
-  * Only the latest point is stored. There is no history.
+  * Only the latest point (and current speed) is stored. There is no history.
   * "Delete my data" removes the person entirely.
 """
 import hmac
+import math
 import os
 import secrets
 import time
@@ -17,6 +19,7 @@ from functools import wraps
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
                    session, url_for)
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, inspect, text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
@@ -52,8 +55,7 @@ db = SQLAlchemy(app)
 
 OWNER_NAME = os.environ.get("OWNER_NAME", "Sahil")
 OWNER_PASSWORD = os.environ.get("OWNER_PASSWORD", "")
-GMAPS_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
-INVITE_DAYS = 7
+INVITE_DAYS = 14
 
 
 def utcnow():
@@ -62,6 +64,14 @@ def utcnow():
 
 def iso(dt):
     return dt.isoformat() + "Z" if dt else None
+
+
+class Invite(db.Model):
+    """A reusable invite link. Anyone who opens it can join (after consenting)."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(60), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 
 class Person(db.Model):
@@ -77,10 +87,14 @@ class Person(db.Model):
     lng = db.Column(db.Float)
     accuracy = db.Column(db.Float)
     battery = db.Column(db.Integer)
+    speed = db.Column(db.Float)      # metres per second
+    heading = db.Column(db.Float)    # degrees, 0 = north
+    invite_id = db.Column(db.Integer)
     updated_at = db.Column(db.DateTime)
 
     def clear_location(self):
         self.lat = self.lng = self.accuracy = self.battery = self.updated_at = None
+        self.speed = self.heading = None
 
     def refresh(self):
         """Turn an expired share into a stopped one and erase the location."""
@@ -91,11 +105,25 @@ class Person(db.Model):
             db.session.commit()
 
 
+def ensure_columns():
+    """create_all() never alters existing tables, so add the new columns by hand."""
+    try:
+        have = {c["name"] for c in inspect(db.engine).get_columns("person")}
+        for col, ddl in (("speed", "FLOAT"), ("heading", "FLOAT"), ("invite_id", "INTEGER")):
+            if col not in have:
+                db.session.execute(text(f"ALTER TABLE person ADD COLUMN {col} {ddl}"))
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.warning("ensure_columns: %s", exc)
+
+
 with app.app_context():
     try:
         db.create_all()
     except Exception as exc:  # another worker may have created the tables
         app.logger.warning("create_all: %s", exc)
+    ensure_columns()
 
 
 # ---------- helpers ----------
@@ -128,17 +156,46 @@ def parse_hours(value):
     return timedelta(hours=h) if 0 < h <= 24 * 14 else None
 
 
+def parse_float(value, lo, hi):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if lo <= v <= hi else None  # NaN fails this test too
+
+
+def haversine(lat1, lng1, lat2, lng2):
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(h))
+
+
+def invite_expired(created_at):
+    return created_at < utcnow() - timedelta(days=INVITE_DAYS)
+
+
+def invite_view(i, counts):
+    return {"id": i.id, "name": i.name, "joined": counts.get(i.id, 0),
+            "url": url_for("join", token=i.token, _external=True),
+            "expires_at": iso(i.created_at + timedelta(days=INVITE_DAYS)),
+            "expired": invite_expired(i.created_at)}
+
+
 def owner_view(p):
     p.refresh()
-    d = {"id": p.id, "name": p.name, "status": p.status, "expires_at": iso(p.expires_at)}
+    d = {"id": p.id, "name": p.name, "status": p.status, "expires_at": iso(p.expires_at),
+         "invite_id": p.invite_id}
     if p.status == "invited":
-        if p.created_at < utcnow() - timedelta(days=INVITE_DAYS):
+        if invite_expired(p.created_at):
             d["status"] = "expired_invite"
         else:
             d["invite_url"] = url_for("join", token=p.invite_token, _external=True)
     if p.status == "active" and p.lat is not None:
         d.update(lat=p.lat, lng=p.lng, accuracy=p.accuracy, battery=p.battery,
-                 updated_at=iso(p.updated_at))
+                 updated_at=iso(p.updated_at), heading=p.heading,
+                 speed_kmh=round(p.speed * 3.6, 1) if p.speed is not None else None)
     return d
 
 
@@ -151,7 +208,7 @@ def share_state(p):
 @app.route("/")
 @owner_required()
 def dashboard():
-    return render_template("dashboard.html", owner=OWNER_NAME, gmaps_key=GMAPS_KEY)
+    return render_template("dashboard.html", owner=OWNER_NAME)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -175,11 +232,15 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.get("/api/people")
+@app.get("/api/overview")
 @owner_required(api=True)
-def api_people():
-    people = Person.query.order_by(Person.created_at).all()
-    return jsonify([owner_view(p) for p in people])
+def api_overview():
+    people = Person.query.order_by(Person.created_at, Person.id).all()
+    invites = Invite.query.order_by(Invite.created_at.desc()).all()
+    counts = dict(db.session.query(Person.invite_id, func.count(Person.id))
+                  .filter(Person.invite_id.isnot(None)).group_by(Person.invite_id).all())
+    return jsonify(people=[owner_view(p) for p in people],
+                   invites=[invite_view(i, counts) for i in invites])
 
 
 @app.post("/api/invite")
@@ -188,10 +249,20 @@ def api_invite():
     name = (request.get_json(silent=True) or {}).get("name", "").strip()[:60]
     if not name:
         return jsonify(error="Enter a name"), 400
-    p = Person(name=name, invite_token=secrets.token_urlsafe(24))
-    db.session.add(p)
+    i = Invite(name=name, token=secrets.token_urlsafe(24))
+    db.session.add(i)
     db.session.commit()
-    return jsonify(owner_view(p))
+    return jsonify(invite_view(i, {}))
+
+
+@app.post("/api/invites/<int:iid>/remove")
+@owner_required(api=True)
+def api_invite_remove(iid):
+    """Revoking a link stops new people joining. People who already joined stay."""
+    i = db.session.get(Invite, iid) or abort(404)
+    db.session.delete(i)
+    db.session.commit()
+    return jsonify(ok=True)
 
 
 @app.post("/api/people/<int:pid>/remove")
@@ -204,24 +275,57 @@ def api_remove(pid):
 
 
 # ---------- invitee pages ----------
+def find_invite(token):
+    """Returns (reusable_invite, legacy_person). At most one is not None."""
+    inv = Invite.query.filter_by(token=token).first()
+    if inv and not invite_expired(inv.created_at):
+        return inv, None
+    legacy = Person.query.filter_by(invite_token=token, status="invited").first()
+    if legacy and not invite_expired(legacy.created_at):
+        return None, legacy
+    return None, None
+
+
+def start_sharing(p, hours):
+    delta = parse_hours(hours)
+    p.share_token = secrets.token_urlsafe(32)
+    p.status = "active"
+    p.consented_at = utcnow()
+    p.expires_at = utcnow() + delta if delta else None
+
+
 @app.route("/join/<token>", methods=["GET", "POST"])
 def join(token):
-    p = Person.query.filter_by(invite_token=token, status="invited").first()
-    if not p or p.created_at < utcnow() - timedelta(days=INVITE_DAYS):
+    inv, legacy = find_invite(token)
+    if not inv and not legacy:
         return render_template("message.html", title="This invite link is no longer valid",
                                text=f"Ask {OWNER_NAME} for a new one."), 404
     if request.method == "POST":
         if request.form.get("agree") != "yes":
             abort(400)
-        delta = parse_hours(request.form.get("hours"))
-        p.share_token = secrets.token_urlsafe(32)
-        p.invite_token = None  # the invite link works once
-        p.status = "active"
-        p.consented_at = utcnow()
-        p.expires_at = utcnow() + delta if delta else None
+        if legacy:  # old single-use link
+            start_sharing(legacy, request.form.get("hours"))
+            legacy.invite_token = None
+            db.session.commit()
+            return redirect(url_for("share", token=legacy.share_token))
+        name = (request.form.get("name") or "").strip()[:60] or inv.name
+        p = Person(name=name, invite_id=inv.id)
+        start_sharing(p, request.form.get("hours"))
+        db.session.add(p)
         db.session.commit()
+        joined = dict(session.get("joined", {}))
+        joined[token] = p.share_token
+        session.permanent = True
+        session["joined"] = joined
         return redirect(url_for("share", token=p.share_token))
-    return render_template("consent.html", p=p, owner=OWNER_NAME)
+    if inv and not request.args.get("new"):
+        # Same phone opening the same link again: go back to the existing page
+        # instead of creating a duplicate person.
+        known = session.get("joined", {}).get(token)
+        if known and Person.query.filter_by(share_token=known).first():
+            return redirect(url_for("share", token=known))
+    name = inv.name if inv else legacy.name
+    return render_template("consent.html", name=name, editable=bool(inv), owner=OWNER_NAME)
 
 
 @app.get("/s/<token>")
@@ -246,11 +350,26 @@ def api_location(token):
         assert -90 <= lat <= 90 and -180 <= lng <= 180
     except Exception:
         return jsonify(error="bad location"), 400
+    now = utcnow()
+    accuracy = parse_float(data.get("accuracy"), 0, 100000)
+    # Speed: trust the phone's own reading; otherwise work it out from the last point.
+    speed = parse_float(data.get("speed"), 0, 120)  # m/s, 120 m/s = 432 km/h
+    heading = parse_float(data.get("heading"), 0, 360)
+    if speed is None and p.lat is not None and p.updated_at:
+        dt = (now - p.updated_at).total_seconds()
+        if 1 <= dt <= 120:
+            dist = haversine(p.lat, p.lng, lat, lng)
+            speed = dist / dt if dist > max(accuracy or 0, 10) else 0.0  # ignore GPS jitter
+    if speed is not None and speed < 0.5:
+        speed = 0.0
+    if not speed:
+        heading = None
     p.lat, p.lng = lat, lng
-    p.accuracy = float(data["accuracy"]) if data.get("accuracy") is not None else None
+    p.accuracy = accuracy
+    p.speed, p.heading = speed, heading
     b = data.get("battery")
     p.battery = int(b) if isinstance(b, (int, float)) and 0 <= b <= 100 else None
-    p.updated_at = utcnow()
+    p.updated_at = now
     db.session.commit()
     return jsonify(share_state(p))
 

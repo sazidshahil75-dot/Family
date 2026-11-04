@@ -1,13 +1,13 @@
 # Family Circle
 
-Consent-based live location sharing. Flask + Postgres, Google Maps (or free OpenStreetMap if no key is set).
+Consent-based live location sharing. Flask + Postgres, with a live dark map.
 
 ## How it works
-1. You sign in with `OWNER_PASSWORD` and create an invite link for each person.
+1. You sign in with `OWNER_PASSWORD` and create an invite link. One link can be sent to many people, even ones with the same name; each person who opens it chooses their own name and agrees for themselves.
 2. They open the link, read exactly what is shared, choose a duration and tick "I agree".
 3. Their page shows a **SHARING LIVE** banner and Pause / Stop / Delete buttons.
-4. Pause, stop or expiry erases their location on the server immediately, so you cannot see them.
-5. Only the latest point is stored. There is no history. Delete removes the person completely.
+4. Pause, stop or expiry erases their location and speed on the server immediately, so you cannot see them.
+5. Only the latest point and current speed are stored. There is no history. Delete removes the person completely.
 
 ## Deploy on Railway
 1. Push this folder to a GitHub repo.
@@ -18,15 +18,15 @@ Consent-based live location sharing. Flask + Postgres, Google Maps (or free Open
    - `OWNER_PASSWORD` = a long password
    - `SECRET_KEY` = a long random string (keeps you signed in across restarts)
    - `OWNER_NAME` = Sahil
-   - `GOOGLE_MAPS_API_KEY` = optional
 5. **Settings > Networking > Generate Domain**. Open it, sign in, and create your first invite.
 HTTPS comes with the Railway domain, and phones need it for location.
 
 Tables are created automatically on first start. The health check is `/healthz`.
 
-## Google Maps key (optional)
-Enable "Maps JavaScript API", turn on billing, and restrict the key to your Railway domain (HTTP referrers).
-Without a key the app uses OpenStreetMap automatically.
+## Map and speed
+The map uses free OpenStreetMap-based tiles (Dark, Streets, Satellite switcher). No API key is needed.
+Speed (km/h) and direction come from the phone's GPS. If a phone does not report speed, the server works it out from the last two points.
+Existing databases are upgraded automatically on start (new columns and the invites table).
 
 ## Run locally
     pip install -r requirements.txt
