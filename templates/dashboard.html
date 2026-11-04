@@ -1,83 +1,269 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Family Circle</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Instrument+Sans:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-</head><body>
-<div class="app"><div id="map"></div>
-<aside><header><h1 style="margin:0;font-size:1.4rem">Family Circle</h1>
-<form method="post" action="{{ url_for('logout') }}"><button class="small">Sign out</button></form></header>
-<form id="inviteForm" class="card stack" style="margin-bottom:1rem">
-<label>Invite someone<input id="inviteName" placeholder="Name, for example Mom" maxlength="60" required></label>
-<button class="primary">Create invite link</button></form>
-<div class="row" style="margin-bottom:.8rem"><button id="fitBtn" class="small">Show everyone</button></div>
-<div id="people"></div>
-<p class="small muted" id="mapNote"></p></aside></div>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+<title>Family Circle</title></head><body>
+<div id="map" aria-label="Map of family members"></div>
+
+<div class="toolbar">
+ <div class="seg" role="group" aria-label="Map style">
+  <button data-layer="dark" aria-pressed="true">Dark</button>
+  <button data-layer="streets" aria-pressed="false">Streets</button>
+  <button data-layer="sat" aria-pressed="false">Satellite</button>
+ </div>
+ <button id="fitBtn" title="Zoom to show everyone">Show everyone</button>
+</div>
+
+<section class="panel" id="panel">
+ <button class="sheet-handle" id="handle" aria-label="Expand or collapse the list"></button>
+ <div class="panel-head">
+  <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 4"/></svg></div>
+  <div><h1>Family Circle</h1><div class="conn" id="conn"><i></i><span id="connText">Live</span></div></div>
+  <div class="head-actions">
+   <button class="small primary" id="inviteToggle" aria-expanded="false" aria-controls="invitePanel">Invite</button>
+   <form method="post" action="{{ url_for('logout') }}" style="margin:0"><button class="small">Sign out</button></form>
+  </div>
+ </div>
+ <div class="panel-body">
+  <div class="stats">
+   <div class="stat"><b id="stLive">0</b><span>Sharing now</span></div>
+   <div class="stat"><b id="stMoving">0</b><span>On the move</span></div>
+   <div class="stat"><b id="stFast">–</b><span id="stFastWho">Fastest right now</span></div>
+  </div>
+
+  <div class="invite-panel" id="invitePanel" hidden>
+   <h2>Invite people</h2>
+   <p class="small muted" style="margin:0">One link can be sent to several people, even with the same name. Each person agrees for themselves and gets their own pin.</p>
+   <form class="invite-form" id="inviteForm">
+    <input id="inviteName" placeholder="Name for this link, e.g. Cousins" maxlength="60" required aria-label="Name for this link">
+    <button class="primary">Create link</button>
+   </form>
+   <div id="invites"></div>
+  </div>
+
+  <div id="people"></div>
+  <p class="small muted" id="note" style="margin-top:1rem">Speed comes from each phone’s GPS. Nothing is saved as history; pausing or stopping erases a person’s position right away.</p>
+ </div>
+</section>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
-const GKEY={{ gmaps_key|tojson }};
+const PALETTE=['#5ec8ff','#ff8a5c','#b69cff','#ffd166','#4ade80','#ff7eb6','#2dd4bf','#f87171'];
+const STALE_MS=90000, MAX_GAUGE_KMH=120, ARC=103.7;
 const $=id=>document.getElementById(id);
-let people=[],markers={},map,fitted=false,gInfo=null,ready=false;
-let useGoogle=!!GKEY;
-function initial(n){return (n||'?').trim().charAt(0).toUpperCase()}
-function ago(iso){const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<60?s+'s ago':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'}
-function infoNode(p){const d=document.createElement('div');const b=document.createElement('b');b.textContent=p.name;d.appendChild(b);
- const l=document.createElement('div');l.textContent=detail(p);d.appendChild(l);return d}
-function detail(p){return 'Updated '+ago(p.updated_at)+(p.battery!=null?' · battery '+p.battery+'%':'')+(p.accuracy!=null?' · ±'+Math.round(p.accuracy)+' m':'')}
-/* ---- map layer (Google if key set, otherwise OpenStreetMap) ---- */
-function initLeaflet(){
- map=L.map('map').setView([23.8,90.4],5);
- L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
- $('mapNote').textContent='Using the free OpenStreetMap map. Add GOOGLE_MAPS_API_KEY to use Google Maps.';ready=true;draw()}
-window.initGoogle=function(){
- map=new google.maps.Map($('map'),{center:{lat:23.8,lng:90.4},zoom:5,streetViewControl:false,mapTypeControl:false});
- gInfo=new google.maps.InfoWindow();ready=true;draw()};
-function setMarker(p){
- const pos={lat:p.lat,lng:p.lng};let m=markers[p.id];
- if(useGoogle){
-  if(!m){m=markers[p.id]=new google.maps.Marker({map,position:pos,label:initial(p.name),title:p.name});
-   m.addListener('click',()=>{gInfo.setContent(infoNode(people.find(x=>x.id===p.id)));gInfo.open(map,m)})}
-  else m.setPosition(pos)}
- else{
-  if(!m){m=markers[p.id]=L.marker([p.lat,p.lng],{title:p.name,icon:L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],
-   html:'<div class="avatar" style="width:34px;height:34px;border:2px solid #fff;box-shadow:0 1px 4px #0006"></div>'})}).addTo(map);
-   m.getElement().firstChild.textContent=initial(p.name);
-   m.on('click',()=>m.bindPopup(infoNode(people.find(x=>x.id===p.id))).openPopup())}
-  else m.setLatLng([p.lat,p.lng])}}
-function removeMarker(id){const m=markers[id];if(!m)return;useGoogle?m.setMap(null):map.removeLayer(m);delete markers[id]}
-function fit(){const pts=people.filter(p=>p.lat!=null);if(!pts.length)return;
- if(useGoogle){const b=new google.maps.LatLngBounds();pts.forEach(p=>b.extend({lat:p.lat,lng:p.lng}));map.fitBounds(b,60);if(pts.length===1)map.setZoom(16)}
- else{const b=L.latLngBounds(pts.map(p=>[p.lat,p.lng]));map.fitBounds(b,{padding:[60,60],maxZoom:16})}}
-function focus(p){if(p.lat==null)return;useGoogle?(map.panTo({lat:p.lat,lng:p.lng}),map.setZoom(16)):map.setView([p.lat,p.lng],16)}
-/* ---- data + list ---- */
-function draw(){
- if(!ready)return;
- const live=new Set(people.filter(p=>p.lat!=null).map(p=>p.id));
- Object.keys(markers).forEach(id=>{if(!live.has(+id))removeMarker(id)});
- people.filter(p=>p.lat!=null).forEach(setMarker);
- if(!fitted&&live.size){fit();fitted=true}
- const box=$('people');box.textContent='';
- if(!people.length){const e=document.createElement('p');e.className='muted';e.textContent='No one yet. Create an invite link and send it to someone.';box.appendChild(e)}
- const labels={active:'Sharing',paused:'Paused',stopped:'Stopped',invited:'Invited',expired_invite:'Invite expired'};
- people.forEach(p=>{
-  const el=document.createElement('div');el.className='person'+(p.status==='active'?' clickable':' off');
-  const av=document.createElement('div');av.className='avatar';av.textContent=initial(p.name);
-  const who=document.createElement('div');who.className='who';
-  const nm=document.createElement('b');nm.textContent=p.name;
-  const sub=document.createElement('span');sub.className='small muted';
-  sub.textContent=p.status==='active'?(p.lat!=null?detail(p):'Waiting for first location'):p.status==='paused'?'Paused. You cannot see them':p.status==='stopped'?'Stopped sharing':p.status==='invited'?'Has not agreed yet':'Create a new invite';
-  who.append(nm,sub);
-  const pill=document.createElement('span');pill.className='pill '+p.status;pill.textContent=labels[p.status]||p.status;
-  const rm=document.createElement('button');rm.className='small';rm.textContent='Remove';rm.onclick=async e=>{e.stopPropagation();
-   if(!confirm('Remove '+p.name+'? Their data is deleted.'))return;await api('/api/people/'+p.id+'/remove',{});load()};
-  el.append(av,who,pill,rm);if(p.status==='active')el.onclick=()=>focus(p);box.appendChild(el);
-  if(p.invite_url){const ib=document.createElement('div');ib.className='invite-box';ib.textContent=p.invite_url;
-   const cp=document.createElement('button');cp.className='small';cp.textContent='Copy invite link';cp.style.marginTop='.4rem';
-   cp.onclick=async e=>{e.stopPropagation();try{await navigator.clipboard.writeText(p.invite_url);cp.textContent='Copied'}catch(x){cp.textContent='Select and copy the link above'}};
-   box.append(ib,cp)}})}
+const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e};
+let people=[],invites=[],cards={},pins={},selected=null,follow=false,fitted=false,inviteSig='';
+
+/* ---------- helpers ---------- */
+const colorOf=p=>PALETTE[p.id%PALETTE.length];
+const initial=n=>(Array.from((n||'?').trim())[0]||'?').toUpperCase();
+const isLive=p=>p.status==='active'&&p.lat!=null;
+const age=p=>p.updated_at?Date.now()-new Date(p.updated_at):Infinity;
+const isFresh=p=>isLive(p)&&age(p)<STALE_MS;
+const isMoving=p=>isFresh(p)&&(p.speed_kmh||0)>=1;
+function ago(iso){const s=Math.max(0,Math.round((Date.now()-new Date(iso))/1000));return s<5?'just now':s<60?s+' s ago':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'}
+function compass(h){return ['N','NE','E','SE','S','SW','W','NW'][Math.round(h/45)%8]}
+function mode(kmh){return kmh<7?{t:'Walking',i:'🚶'}:kmh<25?{t:'Cycling or running',i:'🚴'}:{t:'In a vehicle',i:'🚗'}}
+function displayNames(){ // same name twice -> "Mom (1)", "Mom (2)"
+ const total={},seen={},out={};
+ people.forEach(p=>{const k=p.name.trim().toLowerCase();total[k]=(total[k]||0)+1});
+ people.forEach(p=>{const k=p.name.trim().toLowerCase();seen[k]=(seen[k]||0)+1;out[p.id]=total[k]>1?p.name+' ('+seen[k]+')':p.name});
+ return out}
+function describe(p){
+ if(!isLive(p))return null;
+ if(!isFresh(p))return 'Last seen '+ago(p.updated_at);
+ if(isMoving(p)){const m=mode(p.speed_kmh);return m.i+' '+m.t+(p.heading!=null?', heading '+compass(p.heading):'')}
+ return 'Standing still'}
+
+/* ---------- map ---------- */
+const map=L.map('map',{zoomControl:false,worldCopyJump:true}).setView([23.8,90.4],6);
+L.control.zoom({position:'bottomright'}).addTo(map);
+if(matchMedia('(max-width:820px)').matches)map.attributionControl.setPosition('topleft');
+const carto=(s)=>L.tileLayer('https://{s}.basemaps.cartocdn.com/'+s+'/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:20,attribution:'© OpenStreetMap contributors © CARTO'});
+const LAYERS={
+ dark:carto('dark_all'),
+ streets:carto('rastertiles/voyager'),
+ sat:L.layerGroup([
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri'}),
+  carto('dark_only_labels')])};
+let activeLayer=null;
+function setLayer(k){
+ if(!LAYERS[k])k='dark';
+ if(activeLayer)map.removeLayer(LAYERS[activeLayer]);
+ LAYERS[k].addTo(map);activeLayer=k;
+ document.querySelectorAll('[data-layer]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.layer===k));
+ try{localStorage.setItem('fc-layer',k)}catch(e){}}
+document.querySelectorAll('[data-layer]').forEach(b=>b.onclick=()=>setLayer(b.dataset.layer));
+let saved='dark';try{saved=localStorage.getItem('fc-layer')||'dark'}catch(e){}
+setLayer(saved);
+map.on('dragstart',()=>setFollow(false));
+
+function makePin(p){
+ const wrap=el('div','pin');
+ wrap.innerHTML='<i class="halo"></i><i class="arrow"></i><div class="face"></div><b class="spd"></b>';
+ const icon=L.divIcon({className:'pinwrap',html:wrap,iconSize:[46,46],iconAnchor:[23,23],popupAnchor:[0,-26]});
+ const m=L.marker([p.lat,p.lng],{icon,riseOnHover:true,title:p.name}).addTo(map);
+ const ring=L.circle([p.lat,p.lng],{radius:p.accuracy||30,interactive:false,weight:1,opacity:.5,fillOpacity:.08}).addTo(map);
+ m.bindPopup(()=>popupNode(p.id),{className:'fc-popup',closeButton:false,offset:[0,-4]});
+ m.on('click',()=>select(p.id,false));
+ return pins[p.id]={id:p.id,m,ring,wrap,face:wrap.querySelector('.face'),spd:wrap.querySelector('.spd'),h:0}}
+
+function glide(k,to){ // smooth movement between GPS updates
+ if(k.raf)cancelAnimationFrame(k.raf);
+ const from=k.m.getLatLng(),dist=from.distanceTo(L.latLng(to));
+ if(dist<0.5)return;
+ if(dist>2000||matchMedia('(prefers-reduced-motion:reduce)').matches){k.m.setLatLng(to);k.ring.setLatLng(to);if(follow&&selected===k.id)map.panTo(to,{animate:false});return}
+ const t0=performance.now(),D=1400;
+ const step=t=>{const f=Math.min(1,(t-t0)/D),e=1-Math.pow(1-f,3);
+  const ll=[from.lat+(to[0]-from.lat)*e,from.lng+(to[1]-from.lng)*e];
+  k.m.setLatLng(ll);k.ring.setLatLng(ll);
+  if(follow&&selected===k.id)map.panTo(ll,{animate:false});
+  if(f<1)k.raf=requestAnimationFrame(step)};
+ k.raf=requestAnimationFrame(step)}
+
+function updatePin(p){
+ const k=pins[p.id]||makePin(p),c=colorOf(p),moving=isMoving(p);
+ k.wrap.style.setProperty('--c',c);
+ k.ring.setStyle({color:c,fillColor:c});k.ring.setRadius(Math.min(p.accuracy||30,500));
+ k.face.textContent=initial(p.name);
+ k.wrap.classList.toggle('moving',moving);
+ k.wrap.classList.toggle('stale',!isFresh(p));
+ k.wrap.classList.toggle('sel',selected===p.id);
+ k.spd.textContent=moving?Math.round(p.speed_kmh)+' km/h':'';
+ if(p.heading!=null){const d=((p.heading-k.h+540)%360)-180;k.h+=d;k.wrap.style.setProperty('--h',k.h+'deg')}
+ glide(k,[p.lat,p.lng]);
+ if(k.m.isPopupOpen())k.m.getPopup().setContent(popupNode(p.id))}
+function removePin(id){const k=pins[id];if(!k)return;if(k.raf)cancelAnimationFrame(k.raf);map.removeLayer(k.m);map.removeLayer(k.ring);delete pins[id]}
+
+function popupNode(id){
+ const p=people.find(x=>x.id===id),box=el('div','pop');if(!p)return box;
+ box.appendChild(el('b',null,displayNames()[id]));
+ const big=el('div','big',isMoving(p)?String(Math.round(p.speed_kmh)):'0');big.appendChild(el('small',null,'km/h'));box.appendChild(big);
+ box.appendChild(el('div',null,describe(p)||''));
+ box.appendChild(el('div',null,'Updated '+ago(p.updated_at)+(p.accuracy!=null?' · accurate to '+Math.round(p.accuracy)+' m':'')));
+ if(p.battery!=null)box.appendChild(el('div',null,'Battery '+p.battery+'%'));
+ return box}
+
+function fit(){
+ const pts=people.filter(isLive).map(p=>[p.lat,p.lng]);
+ if(!pts.length)return;setFollow(false);
+ if(pts.length===1)map.flyTo(pts[0],16,{duration:.8});
+ else map.flyToBounds(L.latLngBounds(pts),{padding:[80,80],maxZoom:16,duration:.8})}
+$('fitBtn').onclick=fit;
+
+/* ---------- selection / follow ---------- */
+function select(id,fly=true){
+ selected=id;const p=people.find(x=>x.id===id);
+ if(fly&&p&&isLive(p))map.flyTo([p.lat,p.lng],Math.max(map.getZoom(),16),{duration:.8});
+ render()}
+function setFollow(on){
+ if(follow===on)return;follow=on;
+ if(on){const p=people.find(x=>x.id===selected);if(p&&isLive(p))map.panTo([p.lat,p.lng])}
+ render()}
+
+/* ---------- people cards ---------- */
+function makeCard(p){
+ const c=el('div','person');c.tabIndex=0;c.setAttribute('role','button');
+ c.innerHTML='<div class="gauge"><svg viewBox="0 0 56 56" aria-hidden="true"><circle class="track" cx="28" cy="28" r="22"/><circle class="val" cx="28" cy="28" r="22"/></svg><div class="avatar"></div></div>'+
+  '<div class="who"><div class="name"><b></b><span class="chip"></span></div><div class="sub"></div></div>'+
+  '<div class="read"><span class="num"></span><span class="unit">km/h</span><div class="bat"><i></i><span></span></div></div>'+
+  '<div class="actions"></div>';
+ const q=s=>c.querySelector(s);
+ const r=cards[p.id]={root:c,val:q('.val'),avatar:q('.avatar'),name:q('.name b'),chip:q('.chip'),sub:q('.sub'),num:q('.num'),bat:q('.bat'),batTxt:q('.bat span'),actions:q('.actions'),sig:''};
+ c.onclick=()=>{const cur=people.find(x=>x.id===p.id);if(cur&&isLive(cur))select(p.id)};
+ c.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&e.target===c){e.preventDefault();c.click()}};
+ return r}
+
+function actionButton(label,cls,fn){const b=el('button','small '+(cls||''),label);b.onclick=e=>{e.stopPropagation();fn(b)};return b}
+
+function updateCard(p,dn){
+ const r=cards[p.id]||makeCard(p),live=isLive(p),fresh=isFresh(p),moving=isMoving(p);
+ r.root.style.setProperty('--c',colorOf(p));
+ r.root.classList.toggle('off',!live);
+ r.root.classList.toggle('sel',selected===p.id);
+ r.root.setAttribute('aria-label',dn[p.id]);
+ r.avatar.textContent=initial(p.name);
+ r.name.textContent=dn[p.id];
+ const chips={active:fresh?['Live','live']:live?['Not updating','stale']:['Waiting',''],paused:['Paused','paused'],stopped:['Stopped',''],invited:['Invited',''],expired_invite:['Link expired','']};
+ const ch=chips[p.status]||[p.status,''];
+ r.chip.textContent=ch[0];r.chip.className='chip '+ch[1];
+ const subs={active:describe(p)||'Waiting for first location',paused:'Paused. You can’t see them',stopped:'Stopped sharing',invited:'Hasn’t agreed yet',expired_invite:'Create a new invite'};
+ r.sub.textContent=subs[p.status]||'';
+ const kmh=moving?p.speed_kmh:0;
+ r.num.textContent=fresh?String(Math.round(kmh)):'–';
+ r.val.style.opacity=moving?1:0;
+ r.val.style.strokeDasharray=(ARC*Math.min(kmh/MAX_GAUGE_KMH,1))+' 138.2';
+ const showBat=live&&p.battery!=null;
+ r.bat.hidden=!showBat;
+ if(showBat){r.batTxt.textContent=p.battery+'%';r.bat.style.setProperty('--lvl',p.battery+'%');r.bat.classList.toggle('low',p.battery<=15)}
+ // action buttons only change when state does, so rebuilding them doesn't eat clicks
+ const following=follow&&selected===p.id;
+ const sig=[p.status,!!p.invite_url,following].join('|');
+ if(sig!==r.sig){r.sig=sig;r.actions.textContent='';
+  if(live)r.actions.appendChild(actionButton(following?'Stop following':'Follow on map','',()=>{selected=p.id;setFollow(!(follow&&selected===p.id));render()}));
+  if(p.invite_url)r.actions.appendChild(actionButton('Copy invite link','',b=>copyText(p.invite_url,b)));
+  r.actions.appendChild(actionButton('Remove','danger',async()=>{
+   if(!confirm('Remove '+dn[p.id]+'? Their data is deleted.'))return;
+   await api('/api/people/'+p.id+'/remove',{});if(selected===p.id)selected=null;load()}))}
+ return r.root}
+
+async function copyText(t,btn){const old=btn.textContent;
+ try{await navigator.clipboard.writeText(t);btn.textContent='Copied'}catch(e){window.prompt('Copy this link',t)}
+ setTimeout(()=>btn.textContent=old,1600)}
+
+/* ---------- invites ---------- */
+function renderInvites(){
+ const sig=JSON.stringify(invites);if(sig===inviteSig)return;inviteSig=sig;
+ const box=$('invites');box.textContent='';
+ invites.forEach(i=>{
+  const it=el('div','invite-item'),top=el('div','top');
+  top.append(el('b',null,i.name),el('span','small muted',i.expired?'Expired':i.joined+(i.joined===1?' person joined':' people joined')));
+  const link=el('div','link',i.url),btns=el('div','btns');
+  if(!i.expired){
+   btns.appendChild(actionButton('Copy link','primary',b=>copyText(i.url,b)));
+   if(navigator.share)btns.appendChild(actionButton('Share','',()=>navigator.share({title:'Family Circle',text:'Open this to choose whether to share your location:',url:i.url}).catch(()=>{})));
+   else btns.appendChild(actionButton('WhatsApp','',()=>window.open('https://wa.me/?text='+encodeURIComponent('Open this to choose whether to share your location: '+i.url),'_blank','noopener')));
+  }
+  btns.appendChild(actionButton('Revoke','danger',async()=>{
+   if(!confirm('Revoke "'+i.name+'"? The link stops working. People who already joined stay.'))return;
+   await api('/api/invites/'+i.id+'/remove',{});load()}));
+  it.append(top,link,btns);box.appendChild(it)})}
+$('inviteToggle').onclick=()=>{const p=$('invitePanel'),open=p.hidden;p.hidden=!open;$('inviteToggle').setAttribute('aria-expanded',open);if(open)$('inviteName').focus()};
+$('inviteForm').onsubmit=async e=>{e.preventDefault();const n=$('inviteName').value.trim();if(!n)return;
+ await api('/api/invite',{name:n});$('inviteName').value='';load()};
+
+/* ---------- render + data ---------- */
+function render(){
+ const dn=displayNames();
+ if(selected!=null&&!people.some(p=>p.id===selected))selected=null,follow=false;
+ // map pins
+ const liveIds=new Set(people.filter(isLive).map(p=>p.id));
+ Object.keys(pins).forEach(id=>{if(!liveIds.has(+id))removePin(id)});
+ people.filter(isLive).forEach(updatePin);
+ if(!fitted&&liveIds.size){fit();fitted=true}
+ // cards (keyed, so the speed rings animate instead of flashing)
+ const box=$('people'),order=[...people].sort((a,b)=>(isLive(b)-isLive(a)));
+ Object.keys(cards).forEach(id=>{if(!people.some(p=>p.id===+id)){cards[id].root.remove();delete cards[id]}});
+ box.querySelectorAll('.empty').forEach(e=>e.remove());
+ if(!people.length){box.appendChild(el('div','empty','No one yet. Tap Invite, create a link and send it. One link works for many people.'))}
+ order.forEach(p=>box.appendChild(updateCard(p,dn)));
+ // stats
+ const fast=people.filter(isMoving).sort((a,b)=>b.speed_kmh-a.speed_kmh)[0];
+ $('stLive').textContent=people.filter(isFresh).length;
+ $('stMoving').textContent=people.filter(isMoving).length;
+ if(fast){$('stFast').textContent='';$('stFast').append(String(Math.round(fast.speed_kmh)),el('small',null,'km/h'));$('stFastWho').textContent=dn[fast.id]}
+ else{$('stFast').textContent='–';$('stFastWho').textContent='Fastest right now'}
+ renderInvites()}
+
 async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body)});
  if(r.status===401)location.href='/login';return r.json()}
-async function load(){try{const r=await fetch('/api/people');if(r.status===401){location.href='/login';return}people=await r.json();draw()}catch(e){}}
-$('inviteForm').onsubmit=async e=>{e.preventDefault();const n=$('inviteName').value.trim();if(!n)return;await api('/api/invite',{name:n});$('inviteName').value='';load()};
-$('fitBtn').onclick=fit;
-if(useGoogle){const s=document.createElement('script');s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GKEY)+'&callback=initGoogle&loading=async';s.async=true;
- s.onerror=()=>{useGoogle=false;initLeaflet()};document.head.appendChild(s)}else{initLeaflet()}
-load();setInterval(load,5000);setInterval(()=>{if(ready)draw()},30000);
+function setConn(ok){$('conn').classList.toggle('bad',!ok);$('connText').textContent=ok?'Live · updates every 5 s':'Reconnecting…'}
+async function load(){
+ try{const r=await fetch('/api/overview');if(r.status===401){location.href='/login';return}
+  const d=await r.json();people=d.people;invites=d.invites;setConn(true);render();
+  if(!people.length&&!invites.length&&$('invitePanel').hidden)$('inviteToggle').click()}
+ catch(e){setConn(false)}}
+$('handle').onclick=()=>$('panel').classList.toggle('collapsed');
+load();setInterval(load,5000);setInterval(render,15000);
 </script></body></html>

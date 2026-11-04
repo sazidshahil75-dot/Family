@@ -5,6 +5,7 @@
 <p id="explain" class="muted"></p>
 <div class="card stack">
 <div><b>Status:</b> <span id="statusLine"></span></div>
+<div class="speedbox" id="speedBox" hidden><div><b id="spdNum">0</b><span>km/h</span></div><div class="small muted" id="spdMode"></div></div>
 <div class="small muted" id="lastSent"></div>
 <div class="small muted" id="remaining"></div>
 <p class="error" id="err" hidden></p>
@@ -27,7 +28,7 @@
 </main>
 <script>
 const TOKEN={{ token|tojson }};let state={{ state|tojson }};
-let watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0;const $=id=>document.getElementById(id);
+let watchId=null,lastSent=0,wake=null,locOk=false,lastOkAt=0,prevFix=null;const $=id=>document.getElementById(id);
 async function post(path,body){const r=await fetch('/api/s/'+TOKEN+'/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body||{})});return r.json()}
 function showErr(m){$('err').hidden=!m;$('err').textContent=m||''}
 function fmtRemain(ms){const m=Math.max(0,Math.round(ms/60000));return m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min'}
@@ -40,7 +41,7 @@ function render(){
  $('pauseBtn').hidden=s!=='active';$('stopBtn').hidden=s==='stopped';
  $('resumeBtn').hidden=s==='active';$('resumeBtn').textContent=s==='paused'?'Resume sharing':'Start sharing again';
  $('resumeBox').hidden=s==='active';
- if(s==='active'){startWatch();requestWake()}else{stopWatch();releaseWake()}
+ if(s==='active'){startWatch();requestWake()}else{stopWatch();releaseWake();prevFix=null;$('speedBox').hidden=true}
  tickRemain()}
 function tickRemain(){if(locOk&&Date.now()-lastOkAt>90000){locOk=false;render();return}
  const e=state.expires_at;$('remaining').textContent=(state.status==='active'&&e)?'Sharing ends automatically in '+fmtRemain(new Date(e)-Date.now()):'';
@@ -53,11 +54,21 @@ function startWatch(){
  if(!navigator.geolocation){showErr('This browser cannot share location.');return}
  watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000})}
 function stopWatch(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
+function dist(a,b,c,d){const R=6371000,t=x=>x*Math.PI/180,h=Math.sin(t(c-a)/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(t(d-b)/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+function showSpeed(ms){const k=ms==null?0:Math.round(ms*3.6);$('speedBox').hidden=false;$('spdNum').textContent=k<1?'0':k;
+ $('spdMode').textContent=k<1?'Standing still':k<7?'Walking':k<25?'Cycling or running':'In a vehicle'}
+function deviceSpeed(pos){let v=pos.coords.speed;const t=pos.timestamp||Date.now(),c=pos.coords;
+ if(!(typeof v==='number'&&isFinite(v)&&v>=0)){v=null;
+  if(prevFix&&t-prevFix.t>=1000&&t-prevFix.t<=120000){const d=dist(prevFix.lat,prevFix.lng,c.latitude,c.longitude);v=d>Math.max(c.accuracy||0,10)?d/((t-prevFix.t)/1000):0}}
+ prevFix={lat:c.latitude,lng:c.longitude,t};return v}
 async function onPos(pos){
+ const spd=deviceSpeed(pos);showSpeed(spd);
  const now=Date.now();if(now-lastSent<8000)return;lastSent=now;showErr('');
  let battery=null;try{if(navigator.getBattery){battery=Math.round((await navigator.getBattery()).level*100)}}catch(e){}
  try{const r=await fetch('/api/s/'+TOKEN+'/location',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},
-  body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery})});
+  body:JSON.stringify({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,battery,
+   speed:(typeof pos.coords.speed==='number'&&isFinite(pos.coords.speed))?pos.coords.speed:null,
+   heading:(typeof pos.coords.heading==='number'&&isFinite(pos.coords.heading))?pos.coords.heading:null})});
   const j=await r.json();if(j.status){state=j}
   if(r.ok){locOk=true;lastOkAt=Date.now();showHelp(false)}else{locOk=false}render();
   $('lastSent').textContent='Last sent '+new Date().toLocaleTimeString()+' (accurate to about '+Math.round(pos.coords.accuracy)+' m)'}

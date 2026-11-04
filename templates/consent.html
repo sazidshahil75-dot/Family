@@ -1,19 +1,22 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=swap"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><title>Share your location with {{ owner }}?</title></head><body>
 <main class="wrap stack">
 <h1>{{ owner }} is asking to see your location</h1>
-<p>Hi {{ p.name }}. Read what this does, then choose. Nothing is shared until you tap the button below.</p>
+<p>Hi {{ name }}. Read what this does, then choose. Nothing is shared until you tap the button below.</p>
 <div class="card"><h2>What {{ owner }} will see</h2><ul class="plain">
 <li>Your live position on a map, while you share</li>
+<li>How fast you are moving and which direction, for example walking or in a vehicle</li>
 <li>How accurate it is, your battery level and when it last updated</li></ul></div>
 <div class="card"><h2>What stays private</h2><ul class="plain no">
-<li>No history. Only your latest position is kept, and it is erased when you pause or stop</li>
+<li>No history. Only your latest position and speed are kept, and it is erased when you pause or stop</li>
 <li>No one except {{ owner }} can see it</li>
 <li>Sharing only works while this page is open on your phone</li></ul></div>
 <div class="card"><h2>You are in control</h2><ul class="plain">
 <li>A <b>SHARING LIVE</b> banner is always shown while you are visible</li>
 <li>Pause, stop or delete everything in one tap, any time</li></ul></div>
 <form method="post" class="card stack">
-<label>How long should it share?
+{% if editable %}<label>Your name<input name="name" value="{{ name }}" maxlength="60" required>
+<span class="small muted">This link can be used by several people. Type the name you want {{ owner }} to see.</span></label>
+{% endif %}<label>How long should it share?
 <select name="hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="8">8 hours</option><option value="24">24 hours</option><option value="">Until I stop it</option></select></label>
 <label style="display:flex;gap:.6rem;align-items:flex-start"><input type="checkbox" name="agree" value="yes" required style="width:1.4rem;min-height:1.4rem;margin-top:.15rem">
 <span>I understand and agree to share my location with {{ owner }}.</span></label>
