@@ -131,3 +131,13 @@ input{width:100%;min-height:42px;padding:.5rem .8rem;border-radius:12px;border:1
 
 /* dark map from plain OpenStreetMap tiles (no API key needed) */
 .tiles-dark{filter:invert(1) hue-rotate(195deg) saturate(.55) brightness(.92) contrast(.92)}
+
+.bat.chg{color:var(--live)}
+.bat i{width:24px;height:11px}
+.bat{font-size:.8rem;font-weight:600}
+
+body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+@media(max-width:820px){
+ .panel{bottom:calc(8px + env(safe-area-inset-bottom))}
+ .toolbar{top:calc(8px + env(safe-area-inset-top))}
+}

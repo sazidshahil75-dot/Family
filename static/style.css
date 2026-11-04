@@ -53,3 +53,8 @@ h1,h2{font-family:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif}
 .speedbox{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
 .speedbox b{font:700 2.6rem/1 "Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;font-variant-numeric:tabular-nums}
 .speedbox span{color:var(--muted);margin-left:.3rem}
+
+html{-webkit-text-size-adjust:100%}
+body{-webkit-tap-highlight-color:transparent}
+.wrap{padding-bottom:calc(3rem + env(safe-area-inset-bottom))}
+.banner{padding-top:calc(.9rem + env(safe-area-inset-top))}
