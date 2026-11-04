@@ -37,3 +37,14 @@ Phones only allow location on HTTPS, so test sharing on the deployed URL (or loc
 - Web pages only get location while open. Android Chrome can last a little longer; iPhones stop when the screen locks.
   The share page asks for a screen wake lock to help. For always-on sharing you need a native app (Flutter / React Native).
 - The map refreshes every 5 seconds by polling.
+
+## Battery, rides and calls
+- Battery % and charging come from the browser's Battery API (Chrome on Android). iPhone browsers don't provide it, so those people show "n/a".
+- "Directions" and "Uber" open Google Maps / Uber with the person's position as the destination. You confirm the ride in Uber. Pathao has no public way to pre-fill a destination, so the Pathao button copies the location link and opens pathao.com.
+- Whether someone is on a phone call can't be detected from a web page. It needs a native app (Android phone-state permission, iOS CallKit).
+
+## Install as an app (PWA)
+The site is installable. Android Chrome shows an Install button; on iPhone use Safari, Share, Add to Home Screen.
+An invitee who installs from their own share page gets an app that opens straight to that page.
+The service worker only caches CSS and icons, never pages or location data.
+It is still a web app: location stops when the phone screen locks. A store app (Capacitor / Flutter) is needed for background tracking and call status.

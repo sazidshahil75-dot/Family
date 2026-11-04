@@ -11,13 +11,14 @@ Rules enforced on the server (not just in the UI):
 import hmac
 import math
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   session, url_for)
+                   send_from_directory, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, inspect, text
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -87,6 +88,7 @@ class Person(db.Model):
     lng = db.Column(db.Float)
     accuracy = db.Column(db.Float)
     battery = db.Column(db.Integer)
+    charging = db.Column(db.Boolean)
     speed = db.Column(db.Float)      # metres per second
     heading = db.Column(db.Float)    # degrees, 0 = north
     invite_id = db.Column(db.Integer)
@@ -94,7 +96,7 @@ class Person(db.Model):
 
     def clear_location(self):
         self.lat = self.lng = self.accuracy = self.battery = self.updated_at = None
-        self.speed = self.heading = None
+        self.speed = self.heading = self.charging = None
 
     def refresh(self):
         """Turn an expired share into a stopped one and erase the location."""
@@ -109,7 +111,7 @@ def ensure_columns():
     """create_all() never alters existing tables, so add the new columns by hand."""
     try:
         have = {c["name"] for c in inspect(db.engine).get_columns("person")}
-        for col, ddl in (("speed", "FLOAT"), ("heading", "FLOAT"), ("invite_id", "INTEGER")):
+        for col, ddl in (("speed", "FLOAT"), ("heading", "FLOAT"), ("invite_id", "INTEGER"), ("charging", "BOOLEAN")):
             if col not in have:
                 db.session.execute(text(f"ALTER TABLE person ADD COLUMN {col} {ddl}"))
         db.session.commit()
@@ -193,7 +195,7 @@ def owner_view(p):
         else:
             d["invite_url"] = url_for("join", token=p.invite_token, _external=True)
     if p.status == "active" and p.lat is not None:
-        d.update(lat=p.lat, lng=p.lng, accuracy=p.accuracy, battery=p.battery,
+        d.update(lat=p.lat, lng=p.lng, accuracy=p.accuracy, battery=p.battery, charging=p.charging,
                  updated_at=iso(p.updated_at), heading=p.heading,
                  speed_kmh=round(p.speed * 3.6, 1) if p.speed is not None else None)
     return d
@@ -369,6 +371,8 @@ def api_location(token):
     p.speed, p.heading = speed, heading
     b = data.get("battery")
     p.battery = int(b) if isinstance(b, (int, float)) and 0 <= b <= 100 else None
+    ch = data.get("charging")
+    p.charging = ch if isinstance(ch, bool) and p.battery is not None else None
     p.updated_at = now
     db.session.commit()
     return jsonify(share_state(p))
@@ -398,6 +402,39 @@ def api_control(token):
         return jsonify(error="unknown action"), 400
     db.session.commit()
     return jsonify(share_state(p))
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    """Makes the site installable. A person's share page installs to open on their own page."""
+    token = request.args.get("s", "")
+    shared = bool(re.fullmatch(r"[A-Za-z0-9_-]{10,80}", token))
+    start = url_for("share", token=token) if shared else "/"
+    icon = lambda n: url_for("static", filename=n)
+    resp = jsonify({
+        "id": start, "name": f"Share with {OWNER_NAME}" if shared else "Family Circle",
+        "short_name": "Family Circle", "start_url": start, "scope": "/", "display": "standalone",
+        "orientation": "any", "background_color": "#071218", "theme_color": "#071218",
+        "icons": [
+            {"src": icon("icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": icon("icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": icon("icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "maskable"}],
+    })
+    resp.mimetype = "application/manifest+json"
+    return resp
+
+
+@app.get("/sw.js")
+def service_worker():
+    resp = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.get("/offline")
+def offline():
+    return render_template("message.html", title="You are offline",
+                           text="Check your connection. Sharing and the map need the internet."), 200
 
 
 @app.get("/healthz")
