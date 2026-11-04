@@ -24,7 +24,7 @@ HTTPS comes with the Railway domain, and phones need it for location.
 Tables are created automatically on first start. The health check is `/healthz`.
 
 ## Map and speed
-The map uses free OpenStreetMap-based tiles (Dark, Streets, Satellite switcher). No API key is needed.
+The map uses OpenStreetMap tiles (Dark is the same tiles with a dark filter) and Esri satellite imagery. No API key is needed. CARTO tiles were dropped because CARTO now stamps "API KEY REQUIRED" on keyless tiles.
 Speed (km/h) and direction come from the phone's GPS. If a phone does not report speed, the server works it out from the last two points.
 Existing databases are upgraded automatically on start (new columns and the invites table).
 
