@@ -1,9 +1,9 @@
-:root{--ink:#10262b;--muted:#5d6f73;--paper:#f5f7f4;--card:#fff;--line:#d9e0dc;
+:root{--ink:#10262b;--muted:#5d6f73;--paper:#eef4f6;--card:#fff;--line:#d9e0dc;
 --live:#12936a;--live-bg:#e1f5ec;--pause:#b36b00;--pause-bg:#fdf0d8;--stop:#6b777a;--stop-bg:#e9edec;
---danger:#b3261e;--accent:#0b5d6b;--accent-ink:#fff}
-@media(prefers-color-scheme:dark){:root{--ink:#e6efed;--muted:#9bb0b3;--paper:#0c1a1d;--card:#13262a;--line:#27413f;
+--danger:#b3261e;--accent:#0a6f8f;--accent-ink:#fff}
+@media(prefers-color-scheme:dark){:root{--ink:#e6efed;--muted:#9bb0b3;--paper:#071218;--card:#0f2028;--line:#223b44;
 --live:#3ccf9d;--live-bg:#0f3a2d;--pause:#f0b04a;--pause-bg:#3b2c0f;--stop:#9fb0b2;--stop-bg:#1e3033;
---danger:#ff8a80;--accent:#4cc3d6;--accent-ink:#06242a}}
+--danger:#ff8a80;--accent:#5ec8ff;--accent-ink:#04202b}}
 *{box-sizing:border-box}
 body{margin:0;font:16px/1.5 "Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--paper);color:var(--ink)}
 h1,h2,h3{line-height:1.15;margin:0 0 .5rem;letter-spacing:-.01em}
@@ -46,3 +46,10 @@ aside header{display:flex;justify-content:space-between;align-items:center;margi
 .pill.stopped,.pill.invited,.pill.expired_invite{background:var(--stop-bg);color:var(--stop)}
 .invite-box{word-break:break-all;font-size:.8rem;margin-top:.4rem;padding:.4rem;border:1px dashed var(--line);border-radius:8px}
 @media(max-width:800px){.app{grid-template-columns:1fr;grid-template-rows:55vh 1fr;height:auto}aside{border-left:0;border-top:1px solid var(--line)}}
+
+body{background:radial-gradient(900px 500px at 85% -10%,color-mix(in srgb,var(--accent) 14%,transparent),transparent),var(--paper);background-attachment:fixed}
+h1,h2{font-family:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif}
+.card{border-radius:18px}
+.speedbox{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
+.speedbox b{font:700 2.6rem/1 "Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.speedbox span{color:var(--muted);margin-left:.3rem}
