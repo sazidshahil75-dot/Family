@@ -35,7 +35,8 @@ Phones only allow location on HTTPS, so test sharing on the deployed URL (or loc
 
 ## Limits to know
 - Web pages only get location while open. Android Chrome can last a little longer; iPhones stop when the screen locks.
-  The share page asks for a screen wake lock to help. For always-on sharing you need a native app (Flutter / React Native).
+  The share page asks for a screen wake lock to help. For always-on sharing on Android use the app in `android/` (see below).
+  An iPhone version would need a Mac with Xcode and a paid Apple developer account, and is not built yet.
 - The map refreshes every 5 seconds by polling.
 
 ## Battery, rides and calls
@@ -48,3 +49,9 @@ The site is installable. Android Chrome shows an Install button; on iPhone use S
 An invitee who installs from their own share page gets an app that opens straight to that page.
 The service worker only caches CSS and icons, never pages or location data.
 It is still a web app: location stops when the phone screen locks. A store app (Capacitor / Flutter) is needed for background tracking and call status.
+
+## Android app (always-on sharing)
+`android/` holds a small native app that wraps these same pages and shares location with the screen off, using a
+foreground service and a visible notification with Pause / Stop. The server needs no changes to its API.
+The consent page explains the background sharing when it is opened inside the app.
+Build instructions, including a GitHub Actions workflow that produces the APK for you, are in `android/README.md`.

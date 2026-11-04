@@ -89,6 +89,8 @@ class Person(db.Model):
     accuracy = db.Column(db.Float)
     battery = db.Column(db.Integer)
     charging = db.Column(db.Boolean)
+    battery_manual = db.Column(db.Boolean)   # typed in by the person (iPhones can't report it)
+    battery_at = db.Column(db.DateTime)      # when the level was read or entered
     speed = db.Column(db.Float)      # metres per second
     heading = db.Column(db.Float)    # degrees, 0 = north
     invite_id = db.Column(db.Integer)
@@ -97,6 +99,7 @@ class Person(db.Model):
     def clear_location(self):
         self.lat = self.lng = self.accuracy = self.battery = self.updated_at = None
         self.speed = self.heading = self.charging = None
+        self.battery_manual = self.battery_at = None
 
     def refresh(self):
         """Turn an expired share into a stopped one and erase the location."""
@@ -111,7 +114,8 @@ def ensure_columns():
     """create_all() never alters existing tables, so add the new columns by hand."""
     try:
         have = {c["name"] for c in inspect(db.engine).get_columns("person")}
-        for col, ddl in (("speed", "FLOAT"), ("heading", "FLOAT"), ("invite_id", "INTEGER"), ("charging", "BOOLEAN")):
+        for col, ddl in (("speed", "FLOAT"), ("heading", "FLOAT"), ("invite_id", "INTEGER"), ("charging", "BOOLEAN"),
+                         ("battery_manual", "BOOLEAN"), ("battery_at", "TIMESTAMP")):
             if col not in have:
                 db.session.execute(text(f"ALTER TABLE person ADD COLUMN {col} {ddl}"))
         db.session.commit()
@@ -196,6 +200,7 @@ def owner_view(p):
             d["invite_url"] = url_for("join", token=p.invite_token, _external=True)
     if p.status == "active" and p.lat is not None:
         d.update(lat=p.lat, lng=p.lng, accuracy=p.accuracy, battery=p.battery, charging=p.charging,
+                 battery_manual=bool(p.battery_manual), battery_at=iso(p.battery_at),
                  updated_at=iso(p.updated_at), heading=p.heading,
                  speed_kmh=round(p.speed * 3.6, 1) if p.speed is not None else None)
     return d
@@ -204,6 +209,14 @@ def owner_view(p):
 def share_state(p):
     return {"name": p.name, "status": p.status, "expires_at": iso(p.expires_at),
             "updated_at": iso(p.updated_at)}
+
+
+def is_app():
+    """True inside the Android app (its WebView adds FamilyCircleApp to the user agent)."""
+    return "FamilyCircleApp" in (request.headers.get("User-Agent") or "")
+
+
+app.jinja_env.globals["is_app"] = is_app
 
 
 # ---------- owner pages ----------
@@ -373,6 +386,9 @@ def api_location(token):
     p.battery = int(b) if isinstance(b, (int, float)) and 0 <= b <= 100 else None
     ch = data.get("charging")
     p.charging = ch if isinstance(ch, bool) and p.battery is not None else None
+    p.battery_manual = True if (data.get("battery_manual") is True and p.battery is not None) else None
+    age = parse_float(data.get("battery_age"), 0, 86400) or 0  # seconds since a hand-entered level was set
+    p.battery_at = now - timedelta(seconds=age) if p.battery is not None else None
     p.updated_at = now
     db.session.commit()
     return jsonify(share_state(p))
